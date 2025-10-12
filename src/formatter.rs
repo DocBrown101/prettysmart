@@ -2,7 +2,7 @@ use crate::local_strings::LocalStrings;
 use colored::Colorize;
 use std::process::Output;
 use tabled::builder::Builder;
-use tabled::settings::{Alignment, Modify, Panel, Style, object::Columns};
+use tabled::settings::{Alignment, Modify, Panel, Style, object::Columns, themes::BorderCorrection};
 
 pub fn print_header(title: &str) {
     let top_line = "═".repeat(70);
@@ -42,6 +42,7 @@ pub fn print_table(device: &str, device_type: &str, output: &Output, builder: Bu
     let table = builder
         .build()
         .with(Panel::header(header_content))
+        .with(BorderCorrection::span())
         .with(Style::rounded())
         .with(Modify::new(Columns::last()).with(Alignment::center()))
         .to_string();
