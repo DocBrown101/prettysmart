@@ -25,14 +25,17 @@ fn main() {
 
     for device in devices {
         let device_type = if device.contains("nvme") { "NVMe" } else { "SATA" };
+        let parts: Vec<&str> = device.split_whitespace().collect();
 
         let output_info = Command::new("smartctl")
-            .args(["-i", &device])
+            .args(["-i"])
+            .args(&parts)
             .output()
             .expect(strings.smartctl_start_error());
 
         let output_json = Command::new("smartctl")
-            .args(["-A", "-j", &device])
+            .args(["-A", "-j"])
+            .args(&parts)
             .output()
             .expect(strings.smartctl_start_error());
 

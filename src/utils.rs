@@ -1,15 +1,34 @@
-use glob::glob;
+use std::process::Command;
 
 pub fn find_storage_devices() -> Vec<String> {
-    let mut devices = vec![];
-    for pattern in &["/dev/nvme*n1", "/dev/sd[a-z]"] {
-        if let Ok(paths) = glob(pattern) {
-            for path in paths.flatten() {
-                devices.push(path.display().to_string());
-            }
-        }
+    let output = Command::new("smartctl").args(["--scan"]).output();
+
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        stdout
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    return None;
+                }
+
+                let mut parts = line.split('#'); // Kommentarteil (nach '#') entfernen
+                let device_str = parts.next()?.trim();
+
+                if device_str.starts_with("/dev/") {
+                    Some(device_str.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        return Vec::new();
     }
-    devices
 }
 
 pub fn convert_data_units(units: i64) -> String {
