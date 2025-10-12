@@ -1,0 +1,11 @@
+[package]
+name = "prettysmart"
+version = "0.5.0"
+edition = "2024"
+
+[dependencies]
+colored = "3.0.0"
+glob = "0.3.3"
+serde = "1.0.228"
+serde_json = "1.0.145"
+tabled = { version = "0.20.0", features = ["ansi"] } # https://github.com/zhiburt/tabled
