@@ -24,8 +24,7 @@ fn main() {
     print_header(strings.header_title());
 
     for device in devices {
-        let device_type = if device.contains("nvme") { "NVMe" } else { "SATA" };
-        let parts: Vec<&str> = device.split_whitespace().collect();
+        let parts: Vec<&str> = device.all_parts.split_whitespace().collect();
 
         let output_info = Command::new("smartctl")
             .args(["-i"])
@@ -40,7 +39,7 @@ fn main() {
             .expect(strings.smartctl_start_error());
 
         if !output_info.status.success() || !output_json.status.success() {
-            eprintln!("{}", strings.smart_data_error(&device).red());
+            eprintln!("{}", strings.smart_data_error(&device.device_path).red());
             continue;
         }
 
@@ -48,12 +47,12 @@ fn main() {
 
         let mut builder = create_table_builder(&strings);
 
-        match device_type {
-            "NVMe" => process_nvme(&json, &strings, &mut builder),
+        match device.interface.as_str() {
+            "nvme" => process_nvme(&json, &strings, &mut builder),
             _ => process_sata(&json, &strings, &mut builder),
         }
 
-        print_table(&device, device_type, &output_info, builder);
+        print_table(&device, &output_info, builder);
         println!();
     }
 }

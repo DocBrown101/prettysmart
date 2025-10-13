@@ -1,8 +1,10 @@
 use crate::local_strings::LocalStrings;
+use crate::utils::{self, StorageDevice};
 use colored::Colorize;
 use std::process::Output;
 use tabled::builder::Builder;
-use tabled::settings::{Alignment, Modify, Panel, Style, object::Columns, themes::BorderCorrection};
+use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
+use utils::get_nvme_pcie_info;
 
 pub fn print_header(title: &str) {
     let top_line = "═".repeat(70);
@@ -37,28 +39,29 @@ pub fn add_row(builder: &mut Builder, strings: &LocalStrings, name: &str, value:
     builder.push_record([name, &colored_value, &status_text]);
 }
 
-pub fn print_table(device: &str, device_type: &str, output: &Output, builder: Builder) {
-    let header_content = print_subheader(&device, device_type, &output);
+pub fn print_table(device: &StorageDevice, output: &Output, builder: Builder) {
+    let header_content = print_subheader(&device, &output);
     let table = builder
         .build()
         .with(Panel::header(header_content))
         .with(BorderCorrection::span())
         .with(Style::rounded())
         .with(Modify::new(Columns::last()).with(Alignment::center()))
+        .with(Width::increase(70)) // MinWidth 70
         .to_string();
     println!("{}", table);
 }
 
-fn print_subheader(device: &str, device_type: &str, output: &Output) -> String {
+fn print_subheader(device: &StorageDevice, output: &Output) -> String {
     let mut header_content = String::new();
-    let device_colored = format!("✓ {}", device).green();
-    header_content.push_str(&format!("{} ({})\n", device_colored, device_type.cyan()));
+    let device_colored = format!("✓ {}", device.device_path).green();
+    header_content.push_str(&format!("{} ({})\n", device_colored, device.interface.cyan()));
 
     let info_str = String::from_utf8_lossy(&output.stdout);
-    let keywords = if device_type == "NVMe" {
-        vec!["Model Number", "NVMe Version", "Formatted LBA Size"]
+    let keywords = if device.interface == "nvme" {
+        vec!["Model Number", "NVMe Version"]
     } else {
-        vec!["Device Model", "Sector Size", "SATA Version"]
+        vec!["Device Model", "SATA Version"]
     };
 
     for line in info_str.lines() {
@@ -66,5 +69,12 @@ fn print_subheader(device: &str, device_type: &str, output: &Output) -> String {
             header_content.push_str(&format!("{}\n", line.trim()));
         }
     }
+
+    if device.interface == "nvme" {
+        if let Ok(info) = get_nvme_pcie_info(&device.short_device_name) {
+            header_content.push_str(&format!("{:?}", info));
+        };
+    };
+
     header_content
 }
