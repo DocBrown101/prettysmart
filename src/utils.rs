@@ -61,7 +61,7 @@ pub fn convert_data_units(units: i64) -> String {
 }
 
 /// Read from: /sys/class/nvme/nvme0/device/current_link_speed
-pub fn get_nvme_pcie_info(nvme_name: &str) -> std::io::Result<(String, String)> {
+pub fn get_nvme_pcie_info(nvme_name: &str) -> io::Result<(String, String)> {
     let base_path = format!("/sys/class/nvme/{}/device", nvme_name);
     let base = Path::new(&base_path);
 
@@ -69,18 +69,40 @@ pub fn get_nvme_pcie_info(nvme_name: &str) -> std::io::Result<(String, String)> 
         return Err(io::Error::new(io::ErrorKind::NotFound, format!("Base path '{}' existiert nicht", base_path)));
     }
 
-    let speed_path = base.join("current_link_speed");
-    let width_path = base.join("current_link_width");
+    let read_trimmed = |path: &Path| -> io::Result<String> {
+        fs::read_to_string(path)
+            .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("Datei fehlt: {}", path.display())))
+            .map(|s| s.trim().to_string())
+    };
 
-    let speed = fs::read_to_string(&speed_path)
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("Datei fehlt: {}", speed_path.display())))?
-        .trim()
-        .to_string();
+    let current_speed = read_trimmed(&base.join("current_link_speed"))?;
+    let current_width = read_trimmed(&base.join("current_link_width"))?;
+    let max_speed = read_trimmed(&base.join("max_link_speed"))?;
+    let max_width = read_trimmed(&base.join("max_link_width"))?;
 
-    let width = fs::read_to_string(&width_path)
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, format!("Datei fehlt: {}", width_path.display())))?
-        .trim()
-        .to_string();
+    // Speed-String (GT/s) → PCIe Generation
+    fn gen_from_speed(speed: &str) -> &'static str {
+        if speed.starts_with("2.5") {
+            "PCIe 1.0"
+        } else if speed.starts_with("5.0") {
+            "PCIe 2.0"
+        } else if speed.starts_with("8.0") {
+            "PCIe 3.0"
+        } else if speed.starts_with("16.0") {
+            "PCIe 4.0"
+        } else if speed.starts_with("32.0") {
+            "PCIe 5.0"
+        } else if speed.starts_with("64.0") {
+            "PCIe 6.0"
+        } else {
+            "Unbekannt"
+        }
+    }
 
-    Ok((speed, width))
+    let current_gen = gen_from_speed(&current_speed);
+    let max_gen = gen_from_speed(&max_speed);
+    let current = format!("{} x{}", current_gen, current_width);
+    let maximum = format!("{} x{}", max_gen, max_width);
+
+    Ok((current, maximum))
 }

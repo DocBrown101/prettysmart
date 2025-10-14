@@ -71,9 +71,9 @@ fn print_subheader(device: &StorageDevice, output: &Output) -> String {
     }
 
     if device.interface == "nvme" {
-        if let Ok(info) = get_nvme_pcie_info(&device.short_device_name) {
-            header_content.push_str(&format!("{:?}", info));
-        };
+        if let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name) {
+            header_content.push_str(&format!("{} (max: {})", current, maximum));
+        }
     };
 
     header_content
