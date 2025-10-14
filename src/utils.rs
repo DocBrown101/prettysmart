@@ -9,7 +9,7 @@ pub struct StorageDevice {
 }
 
 pub fn find_storage_devices() -> Vec<StorageDevice> {
-    let output = Command::new("smartctl").args(["--scan"]).output();
+    let output = Command::new("smartctl").args(["--scan-open"]).output();
 
     if let Ok(output) = output
         && output.status.success()
