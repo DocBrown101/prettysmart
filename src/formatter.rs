@@ -49,7 +49,7 @@ pub fn print_table(device: &StorageDevice, output: &Output, builder: Builder) {
         .with(Modify::new(Columns::last()).with(Alignment::center()))
         .with(Width::increase(70)) // MinWidth 70
         .to_string();
-    println!("{}", table);
+    print!("{}", table);
 }
 
 fn print_subheader(device: &StorageDevice, output: &Output) -> String {
