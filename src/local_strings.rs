@@ -128,6 +128,13 @@ impl LocalStrings {
         }
     }
 
+    pub fn transmission_mode(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Übertragungsmodus:",
+            Language::EN => "Transmission mode:",
+        }
+    }
+
     pub fn data_read_label(&self) -> &'static str {
         match self.lang {
             Language::DE => "Daten gelesen",

@@ -1,7 +1,7 @@
 use crate::local_strings::LocalStrings;
 use crate::utils::{self, StorageDevice};
 use colored::Colorize;
-use std::process::Output;
+use serde_json::Value;
 use tabled::builder::Builder;
 use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
 use utils::get_nvme_pcie_info;
@@ -39,8 +39,8 @@ pub fn add_row(builder: &mut Builder, strings: &LocalStrings, name: &str, value:
     builder.push_record([name, &colored_value, &status_text]);
 }
 
-pub fn print_table(device: &StorageDevice, output: &Output, builder: Builder) {
-    let header_content = print_subheader(&device, &output);
+pub fn print_table(device: &StorageDevice, json: &Value, builder: Builder, strings: &LocalStrings) {
+    let header_content = print_subheader(&device, &json, &strings);
     let table = builder
         .build()
         .with(Panel::header(header_content))
@@ -52,29 +52,29 @@ pub fn print_table(device: &StorageDevice, output: &Output, builder: Builder) {
     print!("{}", table);
 }
 
-fn print_subheader(device: &StorageDevice, output: &Output) -> String {
+fn print_subheader(device: &StorageDevice, json: &Value, strings: &LocalStrings) -> String {
     let mut header_content = String::new();
     let device_colored = format!("✓ {}", device.device_path).green();
     header_content.push_str(&format!("{} ({})\n", device_colored, device.interface.cyan()));
 
-    let info_str = String::from_utf8_lossy(&output.stdout);
-    let keywords = if device.interface == "nvme" {
-        vec!["Model Number", "NVMe Version"]
+    if device.interface == "nvme" {
+        if let Some(model) = json["model_name"].as_str() {
+            header_content.push_str(&format!("Model Number: {}\n", model.trim()));
+        }
+        if let Some(nvme_version) = json["nvme_version"]["string"].as_str() {
+            header_content.push_str(&format!("NVMe Version: {}\n", nvme_version.trim()));
+        }
+        if let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name) {
+            header_content.push_str(&format!("{} {} (max: {})", strings.transmission_mode(), current, maximum));
+        }
     } else {
-        vec!["Device Model", "SATA Version"]
-    };
-
-    for line in info_str.lines() {
-        if keywords.iter().any(|k| line.contains(k)) {
-            header_content.push_str(&format!("{}\n", line.trim()));
+        if let Some(model) = json["model_name"].as_str() {
+            header_content.push_str(&format!("Device Model: {}\n", model.trim()));
+        }
+        if let Some(sata_version) = json["sata_version"]["string"].as_str() {
+            header_content.push_str(&format!("SATA Version: {}\n", sata_version.trim()));
         }
     }
-
-    if device.interface == "nvme" {
-        if let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name) {
-            header_content.push_str(&format!("{} (max: {})", current, maximum));
-        }
-    };
 
     header_content
 }

@@ -26,24 +26,18 @@ fn main() {
     for device in devices {
         let parts: Vec<&str> = device.all_parts.split_whitespace().collect();
 
-        let output_info = Command::new("smartctl")
-            .args(["-i"])
+        let output = Command::new("smartctl")
+            .args(["-i", "-A", "-j"])
             .args(&parts)
             .output()
             .expect(strings.smartctl_start_error());
 
-        let output_json = Command::new("smartctl")
-            .args(["-A", "-j"])
-            .args(&parts)
-            .output()
-            .expect(strings.smartctl_start_error());
-
-        if !output_info.status.success() || !output_json.status.success() {
+        if !output.status.success() {
             eprintln!("{}", strings.smart_data_error(&device.device_path).red());
             continue;
         }
 
-        let json: Value = serde_json::from_slice(&output_json.stdout).expect(strings.json_parse_error());
+        let json: Value = serde_json::from_slice(&output.stdout).expect(strings.json_parse_error());
 
         let mut builder = create_table_builder(&strings);
 
@@ -52,7 +46,7 @@ fn main() {
             _ => process_sata(&json, &strings, &mut builder),
         }
 
-        print_table(&device, &output_info, builder);
+        print_table(&device, &json, builder, &strings);
         println!();
     }
 }
