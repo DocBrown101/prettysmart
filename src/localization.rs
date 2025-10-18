@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::LazyLock;
 
 #[derive(Clone, Copy)]
 pub enum Language {
@@ -6,14 +7,16 @@ pub enum Language {
     EN,
 }
 
-pub struct LocalStrings {
+pub static L10N: LazyLock<Localization> = LazyLock::new(|| Localization::new());
+
+pub struct Localization {
     lang: Language,
 }
 
-impl LocalStrings {
+impl Localization {
     pub fn new() -> Self {
         let lang = Self::detect_language();
-        LocalStrings { lang }
+        Localization { lang }
     }
 
     fn detect_language() -> Language {

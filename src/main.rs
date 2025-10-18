@@ -6,22 +6,21 @@ mod formatter;
 use formatter::{add_row, create_table_builder, print_header, print_table};
 mod utils;
 use utils::{convert_data_units, find_storage_devices};
-mod local_strings;
-use local_strings::LocalStrings;
+mod localization;
+use crate::localization::L10N;
 
 const ENDURANCE_WARN: i64 = 70;
 const ENDURANCE_CRIT: i64 = 90;
 
 fn main() {
-    let strings = LocalStrings::new();
     let devices = find_storage_devices();
 
     if devices.is_empty() {
-        eprintln!("{}", strings.no_devices().red());
+        eprintln!("{}", L10N.no_devices().red());
         std::process::exit(1);
     }
 
-    print_header(strings.header_title());
+    print_header(L10N.header_title());
 
     for device in devices {
         let parts: Vec<&str> = device.all_parts.split_whitespace().collect();
@@ -30,33 +29,33 @@ fn main() {
             .args(["-i", "-A", "-j"])
             .args(&parts)
             .output()
-            .expect(strings.smartctl_start_error());
+            .expect(L10N.smartctl_start_error());
 
         if !output.status.success() {
-            eprintln!("{}", strings.smart_data_error(&device.device_path).red());
+            eprintln!("{}", L10N.smart_data_error(&device.device_path).red());
             continue;
         }
 
-        let json: Value = serde_json::from_slice(&output.stdout).expect(strings.json_parse_error());
+        let json: Value = serde_json::from_slice(&output.stdout).expect(L10N.json_parse_error());
 
-        let mut builder = create_table_builder(&strings);
+        let mut builder = create_table_builder();
 
         match device.interface.as_str() {
-            "nvme" => process_nvme(&json, &strings, &mut builder),
-            _ => process_sata(&json, &strings, &mut builder),
+            "nvme" => process_nvme(&json, &mut builder),
+            _ => process_sata(&json, &mut builder),
         }
 
-        print_table(&device, &json, builder, &strings);
+        print_table(&device, &json, builder);
         println!();
     }
 }
 
-fn process_nvme(json: &Value, strings: &LocalStrings, builder: &mut tabled::builder::Builder) {
+fn process_nvme(json: &Value, builder: &mut tabled::builder::Builder) {
     let health = &json["nvme_smart_health_information_log"];
 
     if let Some(warn) = health["critical_warning"].as_i64() {
         if warn != 0 {
-            println!("{}", strings.critical_warning(warn).red().bold());
+            println!("{}", L10N.critical_warning(warn).red().bold());
         }
     }
 
@@ -71,12 +70,12 @@ fn process_nvme(json: &Value, strings: &LocalStrings, builder: &mut tabled::buil
             None
         };
         let name = if spare_thresh >= 0 {
-            format!("{} ({}%)", strings.spare_blocks(), spare_thresh)
+            format!("{} ({}%)", L10N.spare_blocks(), spare_thresh)
         } else {
-            strings.spare_blocks().to_string()
+            L10N.spare_blocks().to_string()
         };
         let value = format!("{}%", spare);
-        add_row(builder, strings, &name, &value, status);
+        add_row(builder, &name, &value, status);
     }
 
     if let Some(pct_used) = health["percentage_used"].as_i64() {
@@ -88,38 +87,38 @@ fn process_nvme(json: &Value, strings: &LocalStrings, builder: &mut tabled::buil
         } else {
             None
         };
-        let value = format!("{} {}", remaining, strings.remaining());
-        add_row(builder, strings, strings.drive_health(), &value, status);
+        let value = format!("{} {}", remaining, L10N.remaining());
+        add_row(builder, L10N.drive_health(), &value, status);
     }
 
     if let Some(read) = health["data_units_read"].as_i64() {
-        add_row(builder, strings, strings.data_read_label(), &convert_data_units(read), None);
+        add_row(builder, L10N.data_read_label(), &convert_data_units(read), None);
     }
     if let Some(written) = health["data_units_written"].as_i64() {
-        add_row(builder, strings, strings.data_written_label(), &convert_data_units(written), None);
+        add_row(builder, L10N.data_written_label(), &convert_data_units(written), None);
     }
 
     if let Some(hours) = health["power_on_hours"].as_i64() {
         let value = format!("{} h ({} Tage)", hours, hours / 24);
-        add_row(builder, strings, strings.operating_hours_label(), &value, None);
+        add_row(builder, L10N.operating_hours_label(), &value, None);
     }
 
     if let Some(cycles) = health["power_cycles"].as_i64() {
-        add_row(builder, strings, strings.power_cycles_label(), &cycles.to_string(), None);
+        add_row(builder, L10N.power_cycles_label(), &cycles.to_string(), None);
     }
 
     if let Some(media_errors) = health["media_errors"].as_i64() {
         let status = if media_errors >= 1 { Some("WARNUNG") } else { None };
-        add_row(builder, strings, strings.media_errors(), &media_errors.to_string(), status);
+        add_row(builder, L10N.media_errors(), &media_errors.to_string(), status);
     }
 
     if let Some(unsafe_shutdowns) = health["unsafe_shutdowns"].as_i64() {
         let status = if unsafe_shutdowns >= 10 { Some("WARNUNG") } else { None };
-        add_row(builder, strings, strings.unsafe_shutdowns(), &unsafe_shutdowns.to_string(), status);
+        add_row(builder, L10N.unsafe_shutdowns(), &unsafe_shutdowns.to_string(), status);
     }
 }
 
-fn process_sata(json: &Value, strings: &LocalStrings, builder: &mut tabled::builder::Builder) {
+fn process_sata(json: &Value, builder: &mut tabled::builder::Builder) {
     let attrs = &json["ata_smart_attributes"]["table"];
 
     let get_attr = |id: i64| -> Option<i64> {
@@ -132,21 +131,21 @@ fn process_sata(json: &Value, strings: &LocalStrings, builder: &mut tabled::buil
 
     if let Some(realloc) = get_attr(5) {
         let status = if realloc >= 1 { Some("WARNUNG") } else { None };
-        add_row(builder, strings, strings.reallocated_sectors(), &realloc.to_string(), status);
+        add_row(builder, L10N.reallocated_sectors(), &realloc.to_string(), status);
     }
 
     if let Some(spin_retry) = get_attr(10) {
         let status = if spin_retry >= 1 { Some("WARNUNG") } else { None };
-        add_row(builder, strings, strings.spin_retry_count(), &spin_retry.to_string(), status);
+        add_row(builder, L10N.spin_retry_count(), &spin_retry.to_string(), status);
     }
 
     if let Some(hours) = get_attr(9) {
         let value = format!("{} h ({} Tage)", hours, hours / 24);
-        add_row(builder, strings, strings.operating_hours_label(), &value, None);
+        add_row(builder, L10N.operating_hours_label(), &value, None);
     }
 
     if let Some(cycles) = get_attr(12) {
-        add_row(builder, strings, strings.power_cycles_label(), &cycles.to_string(), None);
+        add_row(builder, L10N.power_cycles_label(), &cycles.to_string(), None);
     }
 
     if let Some(wear) = attrs
@@ -162,12 +161,12 @@ fn process_sata(json: &Value, strings: &LocalStrings, builder: &mut tabled::buil
             None
         };
         let value = format!("{}%", wear);
-        add_row(builder, strings, strings.drive_health_remaining(), &value, status);
+        add_row(builder, L10N.drive_health_remaining(), &value, status);
     }
 
     if let Some(lbas) = get_attr(241) {
         let tb = (lbas as f64 * 512.0) / 1e12;
         let value = format!("{:.2} TB", tb);
-        add_row(builder, strings, strings.data_written_approx_label(), &value, None);
+        add_row(builder, L10N.data_written_approx_label(), &value, None);
     }
 }
