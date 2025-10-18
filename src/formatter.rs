@@ -6,50 +6,57 @@ use tabled::builder::Builder;
 use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
 use utils::get_nvme_pcie_info;
 
+pub struct TableFormatter {
+    builder: Builder,
+}
+
+impl TableFormatter {
+    pub fn new() -> Self {
+        let mut builder = Builder::default();
+        builder.push_record([
+            format!("{}", L10N.table_property().cyan()),
+            format!("{}", L10N.table_value().cyan()),
+            format!("{}", L10N.table_status().cyan()),
+        ]);
+        TableFormatter { builder }
+    }
+
+    pub fn add_row(&mut self, name: &str, value: &str, status: Option<&str>) {
+        let status_text = match status {
+            Some("KRITISCH") => L10N.status_critical().red().to_string(),
+            Some("WARNUNG") => L10N.status_warning().yellow().to_string(),
+            _ => L10N.status_ok().green().to_string(),
+        };
+
+        let colored_value = match status {
+            Some("KRITISCH") => value.red().bold().to_string(),
+            Some("WARNUNG") => value.yellow().to_string(),
+            _ => value.green().to_string(),
+        };
+
+        self.builder
+            .push_record([name, &colored_value, &status_text]);
+    }
+
+    pub fn print_table(self, device: &StorageDevice, json: &Value) {
+        let header_content = print_subheader(&device, &json);
+        let table = self
+            .builder
+            .build()
+            .with(Panel::header(header_content))
+            .with(BorderCorrection::span())
+            .with(Style::rounded())
+            .with(Modify::new(Columns::last()).with(Alignment::center()))
+            .with(Width::increase(70)) // MinWidth 70
+            .to_string();
+        println!("{}", table);
+    }
+}
+
 pub fn print_header(title: &str) {
     let top_line = "═".repeat(70);
     println!("{}", top_line.cyan());
     println!("{:^70}", title.cyan().bold());
-}
-
-pub fn create_table_builder() -> Builder {
-    let mut builder = Builder::default();
-    builder.push_record([
-        format!("{}", L10N.table_property().cyan()),
-        format!("{}", L10N.table_value().cyan()),
-        format!("{}", L10N.table_status().cyan()),
-    ]);
-    builder
-}
-
-pub fn add_row(builder: &mut Builder, name: &str, value: &str, status: Option<&str>) {
-    let status_text = match status {
-        Some("KRITISCH") => L10N.status_critical().red().to_string(),
-        Some("WARNUNG") => L10N.status_warning().yellow().to_string(),
-        None => L10N.status_ok().green().to_string(),
-        Some(s) => s.to_string(),
-    };
-
-    let colored_value = match status {
-        Some("KRITISCH") => value.red().bold().to_string(),
-        Some("WARNUNG") => value.yellow().to_string(),
-        _ => value.green().to_string(),
-    };
-
-    builder.push_record([name, &colored_value, &status_text]);
-}
-
-pub fn print_table(device: &StorageDevice, json: &Value, builder: Builder) {
-    let header_content = print_subheader(&device, &json);
-    let table = builder
-        .build()
-        .with(Panel::header(header_content))
-        .with(BorderCorrection::span())
-        .with(Style::rounded())
-        .with(Modify::new(Columns::last()).with(Alignment::center()))
-        .with(Width::increase(70)) // MinWidth 70
-        .to_string();
-    print!("{}", table);
 }
 
 fn print_subheader(device: &StorageDevice, json: &Value) -> String {
