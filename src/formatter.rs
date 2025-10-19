@@ -54,9 +54,19 @@ impl TableFormatter {
 }
 
 pub fn print_header(title: &str) {
-    let top_line = "═".repeat(70);
-    println!("{}", top_line.cyan());
-    println!("{:^70}", title.cyan().bold());
+    println!("{}", "═".repeat(70).cyan());
+
+    let version_str = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let title_centered = format!("{:^70}", title);
+    let mut line = title_centered.clone();
+    let start_pos = 70 - version_str.len();
+    line.replace_range(start_pos.., &version_str);
+
+    let title_part = &line[..start_pos];
+    let version_part = &line[start_pos..];
+
+    print!("{}", title_part.cyan().bold());
+    println!("{}", version_part);
 }
 
 fn print_subheader(device: &StorageDevice, json: &Value) -> String {

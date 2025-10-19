@@ -13,14 +13,13 @@ const ENDURANCE_WARN: i64 = 70;
 const ENDURANCE_CRIT: i64 = 90;
 
 fn main() {
-    let devices = find_storage_devices();
+    print_header(L10N.header_title());
 
+    let devices = find_storage_devices();
     if devices.is_empty() {
         eprintln!("{}", L10N.no_devices().red());
         std::process::exit(1);
     }
-
-    print_header(L10N.header_title());
 
     for device in devices {
         let parts: Vec<&str> = device.all_parts.split_whitespace().collect();
