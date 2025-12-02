@@ -55,25 +55,27 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
         }
     }
 
-    let spare = health["available_spare"].as_i64().unwrap_or(-1);
-    let spare_thresh = health["available_spare_threshold"].as_i64().unwrap_or(-1);
-    if spare >= 0 {
-        let status = if spare <= spare_thresh {
-            Some("KRITISCH")
-        } else if spare <= spare_thresh + 10 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let name = if spare_thresh >= 0 {
-            format!("{} ({}%)", L10N.spare_blocks(), spare_thresh)
-        } else {
-            L10N.spare_blocks().to_string()
-        };
-        let value = format!("{}%", spare);
-        formatter.add_row(&name, &value, status);
+    // Handle spare blocks
+    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_i64(), health["available_spare_threshold"].as_i64()) {
+        if spare >= 0 {
+            let status = if spare <= spare_thresh {
+                Some("KRITISCH")
+            } else if spare <= spare_thresh + 10 {
+                Some("WARNUNG")
+            } else {
+                None
+            };
+            let name = if spare_thresh >= 0 {
+                format!("{} ({}%)", L10N.spare_blocks(), spare_thresh)
+            } else {
+                L10N.spare_blocks().to_string()
+            };
+            let value = format!("{}%", spare);
+            formatter.add_row(&name, &value, status);
+        }
     }
 
+    // Handle drive health
     if let Some(pct_used) = health["percentage_used"].as_i64() {
         let remaining = 100 - pct_used;
         let status = if pct_used >= ENDURANCE_CRIT {
@@ -87,6 +89,7 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
         formatter.add_row(L10N.drive_health(), &value, status);
     }
 
+    // Handle data units read/written
     if let Some(read) = health["data_units_read"].as_i64() {
         formatter.add_row(L10N.data_read_label(), &convert_data_units(read), None);
     }
@@ -94,20 +97,24 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
         formatter.add_row(L10N.data_written_label(), &convert_data_units(written), None);
     }
 
+    // Handle power on hours
     if let Some(hours) = health["power_on_hours"].as_i64() {
         let value = format!("{} h ({} Tage)", hours, hours / 24);
         formatter.add_row(L10N.operating_hours_label(), &value, None);
     }
 
+    // Handle power cycles
     if let Some(cycles) = health["power_cycles"].as_i64() {
         formatter.add_row(L10N.power_cycles_label(), &cycles.to_string(), None);
     }
 
+    // Handle media errors
     if let Some(media_errors) = health["media_errors"].as_i64() {
         let status = if media_errors >= 1 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.media_errors(), &media_errors.to_string(), status);
     }
 
+    // Handle unsafe shutdowns
     if let Some(unsafe_shutdowns) = health["unsafe_shutdowns"].as_i64() {
         let status = if unsafe_shutdowns >= 10 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.unsafe_shutdowns(), &unsafe_shutdowns.to_string(), status);
@@ -125,25 +132,30 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
         })
     };
 
+    // Handle reallocated sectors
     if let Some(realloc) = get_attr(5) {
         let status = if realloc >= 1 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.reallocated_sectors(), &realloc.to_string(), status);
     }
 
+    // Handle spin retry count
     if let Some(spin_retry) = get_attr(10) {
         let status = if spin_retry >= 1 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.spin_retry_count(), &spin_retry.to_string(), status);
     }
 
+    // Handle operating hours
     if let Some(hours) = get_attr(9) {
         let value = format!("{} h ({} Tage)", hours, hours / 24);
         formatter.add_row(L10N.operating_hours_label(), &value, None);
     }
 
+    // Handle power cycles
     if let Some(cycles) = get_attr(12) {
         formatter.add_row(L10N.power_cycles_label(), &cycles.to_string(), None);
     }
 
+    // Handle drive health remaining (wear)
     if let Some(wear) = attrs
         .as_array()
         .and_then(|arr| arr.iter().find(|a| a["id"].as_i64() == Some(177)))
@@ -160,6 +172,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
         formatter.add_row(L10N.drive_health_remaining(), &value, status);
     }
 
+    // Handle data written approximation (LBA)
     if let Some(lbas) = get_attr(241) {
         let tb = (lbas as f64 * 512.0) / 1e12;
         let value = format!("{:.2} TB", tb);

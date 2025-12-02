@@ -9,13 +9,9 @@ pub struct StorageDevice {
 }
 
 pub fn find_storage_devices() -> Vec<StorageDevice> {
-    let Some(output) = Command::new("smartctl")
-        .args(["--scan-open"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-    else {
-        return Vec::new();
+    let output = match Command::new("smartctl").args(["--scan-open"]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -28,8 +24,7 @@ pub fn find_storage_devices() -> Vec<StorageDevice> {
                 return None;
             }
 
-            let mut parts = line.split('#'); // Kommentarteil (nach '#') entfernen
-            let device_str = parts.next()?.trim();
+            let device_str = line.split('#').next()?.trim(); // Kommentarteil (nach '#') entfernen
 
             if device_str.starts_with("/dev/") {
                 let tokens: Vec<&str> = device_str.split_whitespace().collect();
