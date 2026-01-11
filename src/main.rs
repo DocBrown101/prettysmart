@@ -252,7 +252,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
             None
         };
         let value = format!("{}%", life_left);
-        formatter.add_row("SSD-Lebensdauer verbleibend", &value, status);
+        formatter.add_row(L10N.ssd_life_remaining(), &value, status);
     }
 
     // Handle Available Reserved Space - ID 232
@@ -265,7 +265,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
             None
         };
         let value = format!("{}%", reserved);
-        formatter.add_row("Reservierte Kapazität verfügbar", &value, status);
+        formatter.add_row(L10N.reserved_capacity_available(), &value, status);
     }
 
     // Handle Available Reserved Space (alternative) - ID 170

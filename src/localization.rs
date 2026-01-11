@@ -65,9 +65,11 @@ impl Localization {
         power_cycles_label => "Einschaltzyklen", "Power cycles";
         reallocated_sectors => "Reallocated Sectors", "Reallocated Sectors";
         remaining => "% verbleibend", "% remaining";
+        reserved_capacity_available => "Reservierte Kapazität verfügbar", "Reserved Capacity Available";
         smartctl_start_error => "smartctl konnte nicht gestartet werden", "smartctl could not be started";
         spare_blocks => "Verfügbare Ersatzblöcke", "Available Spare Blocks";
         spin_retry_count => "Spin Retry Count", "Spin Retry Count";
+        ssd_life_remaining => "SSD-Lebensdauer verbleibend", "SSD Life Remaining";
         status_critical => "❌ KRITISCH", "❌ CRITICAL";
         status_ok => "✓ OK", "✓ OK";
         status_warning => "⚠️ WARNUNG", "⚠️ WARNING";
