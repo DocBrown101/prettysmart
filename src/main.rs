@@ -49,9 +49,32 @@ fn main() {
 fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
     let health = &json["nvme_smart_health_information_log"];
 
+    // Handle critical warning with bit decoding
     if let Some(warn) = health["critical_warning"].as_i64() {
         if warn != 0 {
             println!("{}", L10N.critical_warning(warn).red().bold());
+
+            // Decode individual warning bits TODO: L10N
+            let mut warnings = Vec::new();
+            if warn & 0x01 != 0 {
+                warnings.push("Spare-Kapazität unter Schwellwert");
+            }
+            if warn & 0x02 != 0 {
+                warnings.push("Temperatur über Schwellwert");
+            }
+            if warn & 0x04 != 0 {
+                warnings.push("Zuverlässigkeit degradiert");
+            }
+            if warn & 0x08 != 0 {
+                warnings.push("Medium schreibgeschützt");
+            }
+            if warn & 0x10 != 0 {
+                warnings.push("Volatile Memory Backup fehlgeschlagen");
+            }
+
+            if !warnings.is_empty() {
+                println!("  → {}", warnings.join(", "));
+            }
         }
     }
 
@@ -89,6 +112,13 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
         formatter.add_row(L10N.drive_health(), &value, status);
     }
 
+    // Handle temperature - critical composite temperature time TODO: L10N
+    if let Some(crit_temp_time) = health["critical_comp_time"].as_i64() {
+        let status = if crit_temp_time > 0 { Some("WARNUNG") } else { None };
+        let value = format!("{} min", crit_temp_time);
+        formatter.add_row("Zeit über krit. Temperatur", &value, status);
+    }
+
     // Handle data units read/written
     if let Some(read) = health["data_units_read"].as_i64() {
         formatter.add_row(L10N.data_read_label(), &convert_data_units(read), None);
@@ -110,14 +140,32 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle media errors
     if let Some(media_errors) = health["media_errors"].as_i64() {
-        let status = if media_errors >= 1 { Some("WARNUNG") } else { None };
+        let status = if media_errors >= 1 { Some("KRITISCH") } else { None };
         formatter.add_row(L10N.media_errors(), &media_errors.to_string(), status);
+    }
+
+    // Handle error log entries TODO: L10N
+    if let Some(err_entries) = health["num_err_log_entries"].as_i64() {
+        let status = if err_entries >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row("Fehlerprotokoll-Einträge", &err_entries.to_string(), status);
     }
 
     // Handle unsafe shutdowns
     if let Some(unsafe_shutdowns) = health["unsafe_shutdowns"].as_i64() {
         let status = if unsafe_shutdowns >= 10 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.unsafe_shutdowns(), &unsafe_shutdowns.to_string(), status);
+    }
+
+    // Handle thermal throttling TODO: L10N
+    if let Some(throttle_count) = health["thermal_mgmt_temp1_trans_count"].as_i64() {
+        let status = if throttle_count >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row("Thermische Drosselungen", &throttle_count.to_string(), status);
+    }
+    if let Some(throttle_time) = health["thermal_mgmt_temp1_total_time"].as_i64() {
+        if throttle_time > 0 {
+            let value = format!("{} min", throttle_time);
+            formatter.add_row("Zeit gedrosselt", &value, Some("WARNUNG"));
+        }
     }
 }
 
