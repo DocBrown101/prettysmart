@@ -13,6 +13,19 @@ pub struct Localization {
     lang: Language,
 }
 
+macro_rules! localized {
+    ($($name:ident => $de:expr, $en:expr);* $(;)?) => {
+        $(
+            pub fn $name(&self) -> &'static str {
+                match self.lang {
+                    Language::DE => $de,
+                    Language::EN => $en,
+                }
+            }
+        )*
+    };
+}
+
 impl Localization {
     pub fn new() -> Self {
         let lang = Self::detect_language();
@@ -33,25 +46,37 @@ impl Localization {
         Language::EN
     }
 
-    pub fn no_devices(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Keine Laufwerke gefunden",
-            Language::EN => "No drives found",
-        }
-    }
-
-    pub fn header_title(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Speichermedien-Diagnose",
-            Language::EN => "Storage Media Diagnostics",
-        }
-    }
-
-    pub fn smartctl_start_error(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "smartctl konnte nicht gestartet werden",
-            Language::EN => "smartctl could not be started",
-        }
+    localized! {
+        critical_comp_time => "Zeit über krit. Temperatur", "Critical comp time";
+        data_read_label => "Daten gelesen", "Data read";
+        data_written_approx_label => "Daten geschrieben (ca.)", "Data written (approx.)";
+        data_written_label => "Daten geschrieben", "Data written";
+        drive_health => "Laufwerk-Gesundheit", "Drive Health";
+        drive_health_remaining => "Drive Health (verbleibend)", "Drive Health (remaining)";
+        header_title => "Speichermedien-Diagnose", "Storage Media Diagnostics";
+        json_parse_error => "JSON-Parsing fehlgeschlagen", "JSON parsing failed";
+        media_errors => "Medienfehler", "Media Errors";
+        no_devices => "Keine Laufwerke gefunden", "No drives found";
+        num_err_log_entries => "Fehlerprotokoll-Einträge", "Num err log entries";
+        offline_uncorrectable_sectors => "Nicht korrigierbare Sektoren", "Offline uncorrectable sectors";
+        operating_hours_label => "Betriebsstunden", "Operating hours";
+        overall_throttled => "Insgesamt gedrosselt", "Overall throttled";
+        pending_sectors => "Ausstehende Sektoren", "Pending sectors";
+        power_cycles_label => "Einschaltzyklen", "Power cycles";
+        reallocated_sectors => "Reallocated Sectors", "Reallocated Sectors";
+        remaining => "% verbleibend", "% remaining";
+        smartctl_start_error => "smartctl konnte nicht gestartet werden", "smartctl could not be started";
+        spare_blocks => "Verfügbare Ersatzblöcke", "Available Spare Blocks";
+        spin_retry_count => "Spin Retry Count", "Spin Retry Count";
+        status_critical => "❌ KRITISCH", "❌ CRITICAL";
+        status_ok => "✓ OK", "✓ OK";
+        status_warning => "⚠️ WARNUNG", "⚠️ WARNING";
+        table_property => "Eigenschaft", "Property";
+        table_status => "Status", "Status";
+        table_value => "Aktueller Wert", "Current Value";
+        thermal_throttling => "Thermische Drosselungen", "Thermal throttling";
+        transmission_mode => "Übertragungsmodus:", "Transmission mode:";
+        unsafe_shutdowns => "Unsichere Abschaltungen", "Unsafe Shutdowns";
     }
 
     pub fn smart_data_error(&self, device: &str) -> String {
@@ -65,195 +90,6 @@ impl Localization {
         match self.lang {
             Language::DE => format!("⚠️ KRITISCHE WARNUNG: {}", value),
             Language::EN => format!("⚠️ CRITICAL WARNING: {}", value),
-        }
-    }
-
-    pub fn spare_blocks(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Verfügbare Ersatzblöcke",
-            Language::EN => "Available Spare Blocks",
-        }
-    }
-
-    pub fn critical_comp_time(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Zeit über krit. Temperatur",
-            Language::EN => "Critical comp time",
-        }
-    }
-
-    pub fn num_err_log_entries(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Fehlerprotokoll-Einträge",
-            Language::EN => "Num err log entries",
-        }
-    }
-
-    pub fn thermal_throttling(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Thermische Drosselungen",
-            Language::EN => "Thermal throttling",
-        }
-    }
-
-    pub fn overall_throttled(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Insgesamt gedrosselt",
-            Language::EN => "Overall throttled",
-        }
-    }
-
-    pub fn pending_sectors(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Ausstehende Sektoren",
-            Language::EN => "Pending sectors",
-        }
-    }
-
-    pub fn offline_uncorrectable_sectors(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Nicht korrigierbare Sektoren",
-            Language::EN => "Offline uncorrectable sectors",
-        }
-    }
-
-    pub fn table_property(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Eigenschaft",
-            Language::EN => "Property",
-        }
-    }
-
-    pub fn table_value(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Aktueller Wert",
-            Language::EN => "Current Value",
-        }
-    }
-
-    pub fn table_status(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Status",
-            Language::EN => "Status",
-        }
-    }
-
-    pub fn status_ok(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "✓ OK",
-            Language::EN => "✓ OK",
-        }
-    }
-
-    pub fn status_warning(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "⚠️ WARNUNG",
-            Language::EN => "⚠️ WARNING",
-        }
-    }
-
-    pub fn status_critical(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "❌ KRITISCH",
-            Language::EN => "❌ CRITICAL",
-        }
-    }
-
-    pub fn drive_health(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Laufwerk-Gesundheit",
-            Language::EN => "Drive Health",
-        }
-    }
-
-    pub fn remaining(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "% verbleibend",
-            Language::EN => "% remaining",
-        }
-    }
-
-    pub fn transmission_mode(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Übertragungsmodus:",
-            Language::EN => "Transmission mode:",
-        }
-    }
-
-    pub fn data_read_label(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Daten gelesen",
-            Language::EN => "Data read",
-        }
-    }
-
-    pub fn data_written_label(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Daten geschrieben",
-            Language::EN => "Data written",
-        }
-    }
-
-    pub fn operating_hours_label(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Betriebsstunden",
-            Language::EN => "Operating hours",
-        }
-    }
-
-    pub fn power_cycles_label(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Einschaltzyklen",
-            Language::EN => "Power cycles",
-        }
-    }
-
-    pub fn data_written_approx_label(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Daten geschrieben (ca.)",
-            Language::EN => "Data written (approx.)",
-        }
-    }
-
-    pub fn unsafe_shutdowns(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Unsichere Abschaltungen",
-            Language::EN => "Unsafe Shutdowns",
-        }
-    }
-
-    pub fn media_errors(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Medienfehler",
-            Language::EN => "Media Errors",
-        }
-    }
-
-    pub fn reallocated_sectors(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Reallocated Sectors",
-            Language::EN => "Reallocated Sectors",
-        }
-    }
-
-    pub fn spin_retry_count(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Spin Retry Count",
-            Language::EN => "Spin Retry Count",
-        }
-    }
-
-    pub fn drive_health_remaining(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "Drive Health (verbleibend)",
-            Language::EN => "Drive Health (remaining)",
-        }
-    }
-
-    pub fn json_parse_error(&self) -> &'static str {
-        match self.lang {
-            Language::DE => "JSON-Parsing fehlgeschlagen",
-            Language::EN => "JSON parsing failed",
         }
     }
 }
