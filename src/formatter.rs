@@ -25,14 +25,13 @@ impl TableFormatter {
         let status_text = match status {
             Some("KRITISCH") => L10N.status_critical().red().to_string(),
             Some("WARNUNG") => L10N.status_warning().yellow().to_string(),
-            Some("INFORMATION") => L10N.status_warning().green().to_string(),
+            Some("INFORMATION") => L10N.status_information().bright_blue().to_string(),
             _ => L10N.status_ok().green().to_string(),
         };
 
         let colored_value = match status {
             Some("KRITISCH") => value.red().bold().to_string(),
             Some("WARNUNG") => value.yellow().to_string(),
-            Some("INFORMATION") => L10N.status_warning().bright_blue().to_string(),
             _ => value.green().to_string(),
         };
 

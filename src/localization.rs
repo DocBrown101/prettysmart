@@ -73,6 +73,7 @@ impl Localization {
         status_critical => "❌ KRITISCH", "❌ CRITICAL";
         status_ok => "✓ OK", "✓ OK";
         status_warning => "⚠️ WARNUNG", "⚠️ WARNING";
+        status_information => "Info", "Information";
         table_property => "Eigenschaft", "Property";
         table_status => "Status", "Status";
         table_value => "Aktueller Wert", "Current Value";
