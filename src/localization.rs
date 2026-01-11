@@ -75,6 +75,48 @@ impl Localization {
         }
     }
 
+    pub fn critical_comp_time(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Zeit über krit. Temperatur",
+            Language::EN => "Critical comp time",
+        }
+    }
+
+    pub fn num_err_log_entries(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Fehlerprotokoll-Einträge",
+            Language::EN => "Num err log entries",
+        }
+    }
+
+    pub fn thermal_throttling(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Thermische Drosselungen",
+            Language::EN => "Thermal throttling",
+        }
+    }
+
+    pub fn overall_throttled(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Insgesamt gedrosselt",
+            Language::EN => "Overall throttled",
+        }
+    }
+
+    pub fn pending_sectors(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Ausstehende Sektoren",
+            Language::EN => "Pending sectors",
+        }
+    }
+
+    pub fn offline_uncorrectable_sectors(&self) -> &'static str {
+        match self.lang {
+            Language::DE => "Nicht korrigierbare Sektoren",
+            Language::EN => "Offline uncorrectable sectors",
+        }
+    }
+
     pub fn table_property(&self) -> &'static str {
         match self.lang {
             Language::DE => "Eigenschaft",
