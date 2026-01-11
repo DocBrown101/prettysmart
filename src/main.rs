@@ -113,9 +113,9 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
     }
 
     // Handle temperature - critical composite temperature time
-    if let Some(crit_temp_time) = health["critical_comp_time"].as_i64() {
-        let status = if crit_temp_time > 0 { Some("WARNUNG") } else { None };
-        let value = format!("{} min", crit_temp_time);
+    if let Some(raw_value) = health["critical_comp_time"].as_i64() {
+        let status = if raw_value > 0 { Some("WARNUNG") } else { None };
+        let value = format!("{} min", raw_value);
         formatter.add_row(L10N.critical_comp_time(), &value, status);
     }
 
@@ -134,36 +134,36 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
     }
 
     // Handle power cycles
-    if let Some(cycles) = health["power_cycles"].as_i64() {
-        formatter.add_row(L10N.power_cycles_label(), &cycles.to_string(), None);
+    if let Some(raw_value) = health["power_cycles"].as_i64() {
+        formatter.add_row(L10N.power_cycles_label(), &raw_value.to_string(), None);
     }
 
     // Handle media errors
-    if let Some(media_errors) = health["media_errors"].as_i64() {
-        let status = if media_errors >= 1 { Some("KRITISCH") } else { None };
-        formatter.add_row(L10N.media_errors(), &media_errors.to_string(), status);
+    if let Some(raw_value) = health["media_errors"].as_i64() {
+        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
+        formatter.add_row(L10N.media_errors(), &raw_value.to_string(), status);
     }
 
     // Handle error log entries
-    if let Some(err_entries) = health["num_err_log_entries"].as_i64() {
-        let status = if err_entries >= 1 { Some("WARNUNG") } else { None };
-        formatter.add_row(L10N.num_err_log_entries(), &err_entries.to_string(), status);
+    if let Some(raw_value) = health["num_err_log_entries"].as_i64() {
+        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row(L10N.num_err_log_entries(), &raw_value.to_string(), status);
     }
 
     // Handle unsafe shutdowns
-    if let Some(unsafe_shutdowns) = health["unsafe_shutdowns"].as_i64() {
-        let status = if unsafe_shutdowns >= 10 { Some("WARNUNG") } else { None };
-        formatter.add_row(L10N.unsafe_shutdowns(), &unsafe_shutdowns.to_string(), status);
+    if let Some(raw_value) = health["unsafe_shutdowns"].as_i64() {
+        let status = if raw_value >= 10 { Some("WARNUNG") } else { None };
+        formatter.add_row(L10N.unsafe_shutdowns(), &raw_value.to_string(), status);
     }
 
     // Handle thermal throttling
-    if let Some(throttle_count) = health["thermal_mgmt_temp1_trans_count"].as_i64() {
-        let status = if throttle_count >= 1 { Some("WARNUNG") } else { None };
-        formatter.add_row(L10N.thermal_throttling(), &throttle_count.to_string(), status);
+    if let Some(raw_value) = health["thermal_mgmt_temp1_trans_count"].as_i64() {
+        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row(L10N.thermal_throttling(), &raw_value.to_string(), status);
     }
-    if let Some(throttle_time) = health["thermal_mgmt_temp1_total_time"].as_i64() {
-        if throttle_time > 0 {
-            let value = format!("{} min", throttle_time);
+    if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_i64() {
+        if raw_value > 0 {
+            let value = format!("{} min", raw_value);
             formatter.add_row(L10N.overall_throttled(), &value, Some("WARNUNG"));
         }
     }
@@ -189,44 +189,44 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
     };
 
     // Handle reallocated sectors
-    if let Some(realloc) = get_attr(5) {
-        let status = if realloc >= 1 { Some("KRITISCH") } else { None };
-        formatter.add_row(L10N.reallocated_sectors(), &realloc.to_string(), status);
+    if let Some(raw_value) = get_attr(5) {
+        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
+        formatter.add_row(L10N.reallocated_sectors(), &raw_value.to_string(), status);
     }
 
     // Handle current pending sectors
-    if let Some(pending) = get_attr(197) {
-        let status = if pending >= 1 { Some("KRITISCH") } else { None };
-        formatter.add_row(L10N.pending_sectors(), &pending.to_string(), status);
+    if let Some(raw_value) = get_attr(197) {
+        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
+        formatter.add_row(L10N.pending_sectors(), &raw_value.to_string(), status);
     }
 
     // Handle offline uncorrectable sectors
-    if let Some(uncorrectable) = get_attr(198) {
-        let status = if uncorrectable >= 1 { Some("KRITISCH") } else { None };
-        formatter.add_row(L10N.offline_uncorrectable_sectors(), &uncorrectable.to_string(), status);
+    if let Some(raw_value) = get_attr(198) {
+        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
+        formatter.add_row(L10N.offline_uncorrectable_sectors(), &raw_value.to_string(), status);
     }
 
     // Handle UDMA CRC errors
-    if let Some(crc_errors) = get_attr(199) {
-        let status = if crc_errors >= 1 { Some("WARNUNG") } else { None };
-        formatter.add_row("UDMA CRC-err", &crc_errors.to_string(), status);
+    if let Some(raw_value) = get_attr(199) {
+        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row("UDMA CRC-err", &raw_value.to_string(), status);
     }
 
     // Handle spin retry count
-    if let Some(spin_retry) = get_attr(10) {
-        let status = if spin_retry >= 1 { Some("WARNUNG") } else { None };
-        formatter.add_row(L10N.spin_retry_count(), &spin_retry.to_string(), status);
+    if let Some(raw_value) = get_attr(10) {
+        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
+        formatter.add_row(L10N.spin_retry_count(), &raw_value.to_string(), status);
     }
 
     // Handle operating hours
-    if let Some(hours) = get_attr(9) {
-        let value = format!("{} h ({} Tage)", hours, hours / 24);
+    if let Some(raw_value) = get_attr(9) {
+        let value = format!("{} h ({} Tage)", raw_value, raw_value / 24);
         formatter.add_row(L10N.operating_hours_label(), &value, None);
     }
 
     // Handle power cycles
-    if let Some(cycles) = get_attr(12) {
-        formatter.add_row(L10N.power_cycles_label(), &cycles.to_string(), None);
+    if let Some(raw_value) = get_attr(12) {
+        formatter.add_row(L10N.power_cycles_label(), &raw_value.to_string(), None);
     }
 
     // Handle drive health remaining (wear) - ID 177
