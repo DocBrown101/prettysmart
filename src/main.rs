@@ -152,7 +152,7 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle unsafe shutdowns
     if let Some(raw_value) = health["unsafe_shutdowns"].as_i64() {
-        let status = if raw_value >= 10 { Some("WARNUNG") } else { None };
+        let status = if raw_value >= 0 { Some("INFORMATION") } else { None };
         formatter.add_row(L10N.unsafe_shutdowns(), &raw_value.to_string(), status);
     }
 
