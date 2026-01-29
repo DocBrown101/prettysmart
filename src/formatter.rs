@@ -40,7 +40,7 @@ impl TableFormatter {
     }
 
     pub fn print_table(self, device: &StorageDevice, json: &Value) {
-        let header_content = print_subheader(&device, &json);
+        let header_content = print_subheader(device, json);
         let table = self
             .builder
             .build()
@@ -73,20 +73,20 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
 
     if device.interface == "nvme" {
         if let Some(model) = json["model_name"].as_str() {
-            header_content.push_str(&format!("Model Number: {}\n", model.trim()));
+            header_content.push_str(&format!("{}: {}\n", L10N.model_number(), model.trim()));
         }
         if let Some(nvme_version) = json["nvme_version"]["string"].as_str() {
-            header_content.push_str(&format!("NVMe Version: {}\n", nvme_version.trim()));
+            header_content.push_str(&format!("{}: {}\n", L10N.nvme_version(), nvme_version.trim()));
         }
         if let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name) {
             header_content.push_str(&format!("{} {} (max: {})", L10N.transmission_mode(), current, maximum));
         }
     } else {
         if let Some(model) = json["model_name"].as_str() {
-            header_content.push_str(&format!("Device Model: {}\n", model.trim()));
+            header_content.push_str(&format!("{}: {}\n", L10N.device_model(), model.trim()));
         }
         if let Some(sata_version) = json["sata_version"]["string"].as_str() {
-            header_content.push_str(&format!("SATA Version: {}\n", sata_version.trim()));
+            header_content.push_str(&format!("{}: {}\n", L10N.sata_version(), sata_version.trim()));
         }
     }
 

@@ -5,7 +5,7 @@ use std::process::Command;
 mod formatter;
 use formatter::{TableFormatter, print_header};
 mod utils;
-use utils::{convert_data_units, find_storage_devices};
+use utils::{convert_data_units, convert_lba_to_tb, find_storage_devices};
 mod localization;
 use crate::localization::L10N;
 
@@ -27,14 +27,20 @@ fn main() {
             .args(["-i", "-A", "-j"])
             .args(&parts)
             .output()
-            .expect(L10N.smartctl_start_error());
+            .unwrap_or_else(|_e| {
+                eprintln!("{}", L10N.smartctl_start_error().red());
+                std::process::exit(1);
+            });
 
         if !output.status.success() {
             eprintln!("{}", L10N.smart_data_error(&device.device_path).red());
             continue;
         }
 
-        let json: Value = serde_json::from_slice(&output.stdout).expect(L10N.json_parse_error());
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|_e| {
+            eprintln!("{}", L10N.json_parse_error().red());
+            std::process::exit(1);
+        });
         let mut formatter = TableFormatter::new();
 
         match device.interface.as_str() {
@@ -50,52 +56,49 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
     let health = &json["nvme_smart_health_information_log"];
 
     // Handle critical warning with bit decoding
-    if let Some(warn) = health["critical_warning"].as_i64() {
-        if warn != 0 {
-            println!("{}", L10N.critical_warning(warn).red().bold());
+    if let Some(warn) = health["critical_warning"].as_i64().filter(|&w| w != 0) {
+        println!("{}", L10N.critical_warning(warn).red().bold());
 
-            // Decode individual warning bits TODO: L10N
-            let mut warnings = Vec::new();
-            if warn & 0x01 != 0 {
-                warnings.push("Spare-Kapazität unter Schwellwert");
-            }
-            if warn & 0x02 != 0 {
-                warnings.push("Temperatur über Schwellwert");
-            }
-            if warn & 0x04 != 0 {
-                warnings.push("Zuverlässigkeit degradiert");
-            }
-            if warn & 0x08 != 0 {
-                warnings.push("Medium schreibgeschützt");
-            }
-            if warn & 0x10 != 0 {
-                warnings.push("Volatile Memory Backup fehlgeschlagen");
-            }
+        // Decode individual warning bits
+        let mut warnings = Vec::new();
+        if warn & 0x01 != 0 {
+            warnings.push(L10N.nvme_warning_spare_capacity());
+        }
+        if warn & 0x02 != 0 {
+            warnings.push(L10N.nvme_warning_temperature());
+        }
+        if warn & 0x04 != 0 {
+            warnings.push(L10N.nvme_warning_reliability());
+        }
+        if warn & 0x08 != 0 {
+            warnings.push(L10N.nvme_warning_read_only());
+        }
+        if warn & 0x10 != 0 {
+            warnings.push(L10N.nvme_warning_volatile_backup());
+        }
 
-            if !warnings.is_empty() {
-                println!("  → {}", warnings.join(", "));
-            }
+        if !warnings.is_empty() {
+            println!("  → {}", warnings.join(", "));
         }
     }
 
     // Handle spare blocks
-    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_i64(), health["available_spare_threshold"].as_i64()) {
-        if spare >= 0 {
-            let status = if spare <= spare_thresh {
-                Some("KRITISCH")
-            } else if spare <= spare_thresh + 10 {
-                Some("WARNUNG")
-            } else {
-                None
-            };
-            let name = if spare_thresh >= 0 {
-                format!("{} ({}%)", L10N.spare_blocks(), spare_thresh)
-            } else {
-                L10N.spare_blocks().to_string()
-            };
-            let value = format!("{}%", spare);
-            formatter.add_row(&name, &value, status);
-        }
+    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_i64(), health["available_spare_threshold"].as_i64())
+    {
+        let status = if spare <= spare_thresh {
+            Some("KRITISCH")
+        } else if spare <= spare_thresh + 10 {
+            Some("WARNUNG")
+        } else {
+            None
+        };
+        let name = if spare_thresh >= 0 {
+            format!("{} ({}%)", L10N.spare_blocks(), spare_thresh)
+        } else {
+            L10N.spare_blocks().to_string()
+        };
+        let value = format!("{}%", spare);
+        formatter.add_row(&name, &value, status);
     }
 
     // Handle drive health
@@ -129,8 +132,7 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle power on hours
     if let Some(raw_value) = health["power_on_hours"].as_i64() {
-        let value = format!("{} h ({} Tage)", raw_value, raw_value / 24);
-        formatter.add_row(L10N.operating_hours_label(), &value, None);
+        formatter.add_row(L10N.operating_hours_label(), &L10N.operating_hours(raw_value), None);
     }
 
     // Handle power cycles
@@ -152,7 +154,7 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle unsafe shutdowns
     if let Some(raw_value) = health["unsafe_shutdowns"].as_i64() {
-        let status = if raw_value >= 0 { Some("INFORMATION") } else { None };
+        let status = if raw_value > 0 { Some("INFORMATION") } else { None };
         formatter.add_row(L10N.unsafe_shutdowns(), &raw_value.to_string(), status);
     }
 
@@ -161,11 +163,11 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
         let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
         formatter.add_row(L10N.thermal_throttling(), &raw_value.to_string(), status);
     }
-    if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_i64() {
-        if raw_value > 0 {
-            let value = format!("{} min", raw_value);
-            formatter.add_row(L10N.overall_throttled(), &value, Some("WARNUNG"));
-        }
+    if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_i64()
+        && raw_value > 0
+    {
+        let value = format!("{} min", raw_value);
+        formatter.add_row(L10N.overall_throttled(), &value, Some("WARNUNG"));
     }
 }
 
@@ -209,7 +211,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
     // Handle UDMA CRC errors
     if let Some(raw_value) = get_attr(199) {
         let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
-        formatter.add_row("UDMA CRC-err", &raw_value.to_string(), status);
+        formatter.add_row(L10N.udma_crc_errors(), &raw_value.to_string(), status);
     }
 
     // Handle spin retry count
@@ -220,8 +222,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle operating hours
     if let Some(raw_value) = get_attr(9) {
-        let value = format!("{} h ({} Tage)", raw_value, raw_value / 24);
-        formatter.add_row(L10N.operating_hours_label(), &value, None);
+        formatter.add_row(L10N.operating_hours_label(), &L10N.operating_hours(raw_value), None);
     }
 
     // Handle power cycles
@@ -278,7 +279,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
             None
         };
         let value = format!("{}%", reserved_alt);
-        formatter.add_row("Reserved Space (Alt)", &value, status);
+        formatter.add_row(L10N.reserved_space_alt(), &value, status);
     }
 
     // Handle Media Wearout Indicator - ID 233
@@ -290,7 +291,7 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
         } else {
             None
         };
-        formatter.add_row("Media Wearout Indicator", &wearout.to_string(), status);
+        formatter.add_row(L10N.media_wearout_indicator(), &wearout.to_string(), status);
     }
 
     // Handle Wear Leveling Count - ID 173
@@ -303,25 +304,22 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
             None
         };
         let value = format!("{}%", wear_level);
-        formatter.add_row("Wear Leveling", &value, status);
+        formatter.add_row(L10N.wear_leveling(), &value, status);
     }
 
     // Handle Total LBAs Written - ID 246 (preferred over 241)
     if let Some(lbas) = get_attr(246) {
-        let tb = (lbas as f64 * 512.0) / 1e12;
-        let value = format!("{:.2} TB", tb);
+        let value = convert_lba_to_tb(lbas, 512.0);
         formatter.add_row(L10N.data_written_approx_label(), &value, None);
     } else if let Some(lbas) = get_attr(241) {
         // Fallback to ID 241 if 246 not available
-        let tb = (lbas as f64 * 512.0) / 1e12;
-        let value = format!("{:.2} TB", tb);
+        let value = convert_lba_to_tb(lbas, 512.0);
         formatter.add_row(L10N.data_written_approx_label(), &value, None);
     }
 
     // Handle Total LBAs Read - ID 242
     if let Some(lbas) = get_attr(242) {
-        let tb = (lbas as f64 * 512.0) / 1e12;
-        let value = format!("{:.2} TB", tb);
-        formatter.add_row("Gelesene Daten (gesamt)", &value, None);
+        let value = convert_lba_to_tb(lbas, 512.0);
+        formatter.add_row(L10N.data_read_total(), &value, None);
     }
 }

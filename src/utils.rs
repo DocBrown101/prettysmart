@@ -51,9 +51,13 @@ pub fn find_storage_devices() -> Vec<StorageDevice> {
 }
 
 pub fn convert_data_units(units: i64) -> String {
-    let bytes = units as f64 * 512000.0;
+    convert_lba_to_tb(units, 512000.0)
+}
+
+pub fn convert_lba_to_tb(units: i64, multiplier: f64) -> String {
+    let bytes = units as f64 * multiplier;
     let tb = bytes / 1e12;
-    format!("{:.1} TB", tb)
+    format!("{:.2} TB", tb)
 }
 
 /// Read from: /sys/class/nvme/nvme0/device/current_link_speed
