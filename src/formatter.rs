@@ -10,8 +10,8 @@ pub struct TableFormatter {
     builder: Builder,
 }
 
-impl TableFormatter {
-    pub fn new() -> Self {
+impl Default for TableFormatter {
+    fn default() -> Self {
         let mut builder = Builder::default();
         builder.push_record([
             format!("{}", L10N.table_property().cyan()),
@@ -19,6 +19,12 @@ impl TableFormatter {
             format!("{}", L10N.table_status().cyan()),
         ]);
         TableFormatter { builder }
+    }
+}
+
+impl TableFormatter {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add_row(&mut self, name: &str, value: &str, status: Option<&str>) {
@@ -68,8 +74,7 @@ pub fn print_header(title: &str) {
 
 fn print_subheader(device: &StorageDevice, json: &Value) -> String {
     let mut header_content = String::new();
-    let device_colored = format!("✓ {}", device.device_path).green();
-    header_content.push_str(&format!("{} ({})\n", device_colored, device.interface.cyan()));
+    header_content.push_str(&format!("{} ({})\n", device.device_path.green(), device.interface.cyan()));
 
     if device.interface == "nvme" {
         if let Some(model) = json["model_name"].as_str() {

@@ -50,10 +50,6 @@ pub fn find_storage_devices() -> Vec<StorageDevice> {
         .collect()
 }
 
-pub fn convert_data_units(units: i64) -> String {
-    convert_lba_to_tb(units, 512000.0)
-}
-
 pub fn convert_lba_to_tb(units: i64, multiplier: f64) -> String {
     let bytes = units as f64 * multiplier;
     let tb = bytes / 1e12;

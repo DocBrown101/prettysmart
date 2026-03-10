@@ -5,7 +5,7 @@ use std::process::Command;
 mod formatter;
 use formatter::{TableFormatter, print_header};
 mod utils;
-use utils::{convert_data_units, convert_lba_to_tb, find_storage_devices};
+use utils::{convert_lba_to_tb, find_storage_devices};
 mod localization;
 use crate::localization::L10N;
 
@@ -83,8 +83,7 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
     }
 
     // Handle spare blocks
-    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_i64(), health["available_spare_threshold"].as_i64())
-    {
+    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_i64(), health["available_spare_threshold"].as_i64()) {
         let status = if spare <= spare_thresh {
             Some("KRITISCH")
         } else if spare <= spare_thresh + 10 {
@@ -124,10 +123,10 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 
     // Handle data units read/written
     if let Some(raw_value) = health["data_units_read"].as_i64() {
-        formatter.add_row(L10N.data_read_label(), &convert_data_units(raw_value), None);
+        formatter.add_row(L10N.data_read_label(), &convert_lba_to_tb(raw_value, 512000.0), None);
     }
     if let Some(raw_value) = health["data_units_written"].as_i64() {
-        formatter.add_row(L10N.data_written_label(), &convert_data_units(raw_value), None);
+        formatter.add_row(L10N.data_written_label(), &convert_lba_to_tb(raw_value, 512000.0), None);
     }
 
     // Handle power on hours
@@ -174,21 +173,15 @@ fn process_nvme(json: &Value, formatter: &mut TableFormatter) {
 fn process_sata(json: &Value, formatter: &mut TableFormatter) {
     let attrs = &json["ata_smart_attributes"]["table"];
 
-    let get_attr = |id: i64| -> Option<i64> {
-        attrs.as_array().and_then(|arr| {
-            arr.iter()
-                .find(|a| a["id"].as_i64() == Some(id))
-                .and_then(|a| a["raw"]["value"].as_i64())
-        })
-    };
+    fn find_entry(attrs: &Value, id: i64) -> Option<&Value> {
+        attrs
+            .as_array()?
+            .iter()
+            .find(|a| a["id"].as_i64() == Some(id))
+    }
 
-    let get_attr_value = |id: i64| -> Option<i64> {
-        attrs.as_array().and_then(|arr| {
-            arr.iter()
-                .find(|a| a["id"].as_i64() == Some(id))
-                .and_then(|a| a["value"].as_i64())
-        })
-    };
+    let get_attr = |id: i64| find_entry(attrs, id).and_then(|a| a["raw"]["value"].as_i64());
+    let get_attr_value = |id: i64| find_entry(attrs, id).and_then(|a| a["value"].as_i64());
 
     // Handle reallocated sectors
     if let Some(raw_value) = get_attr(5) {
@@ -308,17 +301,17 @@ fn process_sata(json: &Value, formatter: &mut TableFormatter) {
     }
 
     // Handle Total LBAs Written - ID 246 (preferred over 241)
-    if let Some(lbas) = get_attr(246) {
+    if let Some(lbas) = get_attr(246).filter(|&v| v > 0) {
         let value = convert_lba_to_tb(lbas, 512.0);
         formatter.add_row(L10N.data_written_approx_label(), &value, None);
-    } else if let Some(lbas) = get_attr(241) {
+    } else if let Some(lbas) = get_attr(241).filter(|&v| v > 0) {
         // Fallback to ID 241 if 246 not available
         let value = convert_lba_to_tb(lbas, 512.0);
         formatter.add_row(L10N.data_written_approx_label(), &value, None);
     }
 
     // Handle Total LBAs Read - ID 242
-    if let Some(lbas) = get_attr(242) {
+    if let Some(lbas) = get_attr(242).filter(|&v| v > 0) {
         let value = convert_lba_to_tb(lbas, 512.0);
         formatter.add_row(L10N.data_read_total(), &value, None);
     }

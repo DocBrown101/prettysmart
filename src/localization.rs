@@ -26,10 +26,15 @@ macro_rules! localized {
     };
 }
 
+impl Default for Localization {
+    fn default() -> Self {
+        Localization { lang: Self::detect_language() }
+    }
+}
+
 impl Localization {
     pub fn new() -> Self {
-        let lang = Self::detect_language();
-        Localization { lang }
+        Self::default()
     }
 
     fn detect_language() -> Language {
