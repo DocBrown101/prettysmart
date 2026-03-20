@@ -2,12 +2,9 @@ use colored::Colorize;
 use serde_json::Value;
 use std::process::Command;
 
-mod formatter;
-use formatter::{TableFormatter, print_header};
-mod utils;
-use utils::{convert_lba_to_tb, find_storage_devices};
-mod localization;
-use crate::localization::L10N;
+use prettysmart::formatter::{TableFormatter, print_header};
+use prettysmart::localization::L10N;
+use prettysmart::utils::{convert_lba_to_tb, find_storage_devices};
 
 const ENDURANCE_WARN: i64 = 70;
 const ENDURANCE_CRIT: i64 = 90;

@@ -7,7 +7,7 @@ pub enum Language {
     EN,
 }
 
-pub static L10N: LazyLock<Localization> = LazyLock::new(Localization::new);
+pub static L10N: LazyLock<Localization> = LazyLock::new(|| Localization::new(Localization::detect_language()));
 
 pub struct Localization {
     lang: Language,
@@ -26,15 +26,9 @@ macro_rules! localized {
     };
 }
 
-impl Default for Localization {
-    fn default() -> Self {
-        Localization { lang: Self::detect_language() }
-    }
-}
-
 impl Localization {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(lang: Language) -> Self {
+        Self { lang }
     }
 
     fn detect_language() -> Language {
@@ -116,7 +110,8 @@ impl Localization {
 
     pub fn operating_hours(&self, hours: i64) -> String {
         self.operating_hours_value()
-            .replace("{}", &hours.to_string())
+            .replacen("{}", &hours.to_string(), 1)
             .replacen("{}", &(hours / 24).to_string(), 1)
     }
+
 }
