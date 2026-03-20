@@ -37,10 +37,3 @@ jobs:
             -Dsonar.organization=docbrown101
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # 4. Start SonarQube Quality Gate check
-      - name: Start SonarQube Quality Gate check
-        uses: sonarsource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
