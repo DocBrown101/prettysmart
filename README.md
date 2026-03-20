@@ -1,10 +1,16 @@
-# prettysmart
-
-![Preview](https://github.com/DocBrown101/prettysmart/blob/main/images/single_nvme.jpg)
-
-## Overview
+# Project Overview
 
 **prettysmart** is a command-line tool for monitoring and analyzing SMART (Self-Monitoring, Analysis, and Reporting Technology) data from storage devices. It provides detailed information about the health status of NVMe and SATA drives in an easy-to-read format.
+
+<p align="center">
+  <a href="https://sonarcloud.io/summary/new_code?id=DocBrown101_prettysmart">
+    <img src="https://sonarcloud.io/api/project_badges/quality_gate?project=DocBrown101_prettysmart" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://github.com/DocBrown101/prettysmart/blob/main/images/single_nvme.jpg" />
+</p>
 
 ## Features
 
