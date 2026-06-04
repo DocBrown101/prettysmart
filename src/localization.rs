@@ -104,14 +104,13 @@ impl Localization {
         }
     }
 
-    pub fn critical_warning(&self, value: i64) -> String {
+    pub fn critical_warning(&self, value: u64) -> String {
         format!("{}: {}", self.critical_warning_label(), value)
     }
 
-    pub fn operating_hours(&self, hours: i64) -> String {
+    pub fn operating_hours(&self, hours: u64) -> String {
         self.operating_hours_value()
             .replacen("{}", &hours.to_string(), 1)
             .replacen("{}", &(hours / 24).to_string(), 1)
     }
-
 }

@@ -1,4 +1,4 @@
-use prettysmart::utils::convert_lba_to_tb;
+use prettysmart::utils::{convert_lba_to_tb, nvme_controller_name};
 
 #[test]
 fn convert_lba_to_tb_nvme_data_units() {
@@ -29,4 +29,16 @@ fn convert_lba_to_tb_small_value() {
 fn convert_lba_to_tb_large_value() {
     // ~4 TB worth of NVMe data units
     assert_eq!(convert_lba_to_tb(7_812_500, 512000.0), "4.00 TB");
+}
+
+#[test]
+fn nvme_controller_name_strips_namespace() {
+    assert_eq!(nvme_controller_name("nvme0n1"), "nvme0");
+    assert_eq!(nvme_controller_name("nvme10n2"), "nvme10");
+}
+
+#[test]
+fn nvme_controller_name_keeps_controller_and_unknown_names() {
+    assert_eq!(nvme_controller_name("nvme0"), "nvme0");
+    assert_eq!(nvme_controller_name("sda"), "sda");
 }

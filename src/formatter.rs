@@ -6,6 +6,10 @@ use tabled::builder::Builder;
 use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
 use utils::get_nvme_pcie_info;
 
+const TABLE_WIDTH: usize = 70;
+const BANNER_WIDTH: usize = TABLE_WIDTH + 2;
+const TABLE_INNER_WIDTH: usize = TABLE_WIDTH - 2;
+
 pub struct TableFormatter {
     builder: Builder,
 }
@@ -54,18 +58,18 @@ impl TableFormatter {
             .with(BorderCorrection::span())
             .with(Style::rounded())
             .with(Modify::new(Columns::last()).with(Alignment::center()))
-            .with(Width::increase(70)) // MinWidth 70
+            .with(Width::increase(TABLE_WIDTH))
             .to_string();
         println!("{}", table);
     }
 }
 
 pub fn print_header(title: &str) {
-    println!("{}", "═".repeat(70).cyan());
+    println!("{}", "═".repeat(BANNER_WIDTH).cyan());
 
     let version = format!("v{}", env!("CARGO_PKG_VERSION"));
-    let mut title_str = format!("{:^70}", title);
-    let start = 70 - version.len();
+    let mut title_str = format!("{:^width$}", title, width = BANNER_WIDTH);
+    let start = BANNER_WIDTH - version.len();
     title_str.replace_range(start.., &version);
 
     print!("{}", title_str[..start].cyan().bold());
@@ -74,7 +78,8 @@ pub fn print_header(title: &str) {
 
 fn print_subheader(device: &StorageDevice, json: &Value) -> String {
     let mut header_content = String::new();
-    header_content.push_str(&format!("{} ({})\n", device.device_path.green(), device.interface.cyan()));
+    header_content.push_str(&device_header_line(device, json));
+    header_content.push('\n');
 
     if device.interface == "nvme" {
         if let Some(model) = json["model_name"].as_str() {
@@ -96,4 +101,29 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
     }
 
     header_content
+}
+
+fn device_header_line(device: &StorageDevice, json: &Value) -> String {
+    let left_plain = format!("{} ({})", device.device_path, device.interface);
+    let left_colored = format!("{} ({})", device.device_path.green(), device.interface.cyan());
+
+    let Some(passed) = json["smart_status"]["passed"].as_bool() else {
+        return left_colored;
+    };
+
+    let status_plain = if passed {
+        L10N.status_ok().to_string()
+    } else {
+        L10N.status_critical().to_string()
+    };
+    let status_colored = if passed {
+        L10N.status_ok().green().to_string()
+    } else {
+        L10N.status_critical().red().bold().to_string()
+    };
+
+    let occupied = left_plain.chars().count() + status_plain.chars().count();
+    let padding = TABLE_INNER_WIDTH.saturating_sub(occupied).max(1);
+
+    format!("{}{}{}", left_colored, " ".repeat(padding), status_colored)
 }

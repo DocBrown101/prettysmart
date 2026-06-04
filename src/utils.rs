@@ -8,15 +8,23 @@ pub struct StorageDevice {
     pub interface: String,         // -> nvme
 }
 
-pub fn find_storage_devices() -> Vec<StorageDevice> {
-    let output = match Command::new("smartctl").args(["--scan-open"]).output() {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
-    };
+pub fn find_storage_devices() -> io::Result<Vec<StorageDevice>> {
+    let output = Command::new("smartctl").args(["--scan-open"]).output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let message = if stderr.trim().is_empty() {
+            format!("smartctl --scan-open failed ({})", output.status)
+        } else {
+            format!("smartctl --scan-open failed ({}): {}", output.status, stderr.trim())
+        };
+
+        return Err(io::Error::other(message));
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    stdout
+    let devices = stdout
         .lines()
         .filter_map(|line| {
             let line = line.trim();
@@ -47,18 +55,44 @@ pub fn find_storage_devices() -> Vec<StorageDevice> {
                 None
             }
         })
-        .collect()
+        .collect();
+
+    Ok(devices)
 }
 
-pub fn convert_lba_to_tb(units: i64, multiplier: f64) -> String {
+pub fn convert_lba_to_tb(units: u64, multiplier: f64) -> String {
     let bytes = units as f64 * multiplier;
     let tb = bytes / 1e12;
     format!("{:.2} TB", tb)
 }
 
+pub fn nvme_controller_name(nvme_name: &str) -> &str {
+    let Some(rest) = nvme_name.strip_prefix("nvme") else {
+        return nvme_name;
+    };
+
+    let digits_len = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits_len == 0 {
+        return nvme_name;
+    }
+
+    let controller_len = "nvme".len() + digits_len;
+    let namespace = &nvme_name[controller_len..];
+
+    if namespace
+        .strip_prefix('n')
+        .is_some_and(|ns| !ns.is_empty() && ns.chars().all(|c| c.is_ascii_digit()))
+    {
+        &nvme_name[..controller_len]
+    } else {
+        nvme_name
+    }
+}
+
 /// Read from: /sys/class/nvme/nvme0/device/current_link_speed
 pub fn get_nvme_pcie_info(nvme_name: &str) -> io::Result<(String, String)> {
-    let base_path = format!("/sys/class/nvme/{}/device", nvme_name);
+    let controller_name = nvme_controller_name(nvme_name);
+    let base_path = format!("/sys/class/nvme/{}/device", controller_name);
     let base = Path::new(&base_path);
 
     if !base.exists() {
