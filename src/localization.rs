@@ -88,6 +88,7 @@ impl Localization {
         status_ok => "✓ OK", "✓ OK";
         status_warning => "⚠️ WARNUNG", "⚠️ WARNING";
         table_property => "Eigenschaft", "Property";
+        table_change => "Veränderung", "Change";
         table_status => "Status", "Status";
         table_value => "Aktueller Wert", "Current Value";
         thermal_throttling => "Thermische Drosselungen", "Thermal throttling";
@@ -112,5 +113,19 @@ impl Localization {
         self.operating_hours_value()
             .replacen("{}", &hours.to_string(), 1)
             .replacen("{}", &(hours / 24).to_string(), 1)
+    }
+
+    pub fn snapshot_load_error(&self, error: &str) -> String {
+        match self.lang {
+            Language::DE => format!("Snapshot-Historie konnte nicht geladen werden: {}", error),
+            Language::EN => format!("Snapshot history could not be loaded: {}", error),
+        }
+    }
+
+    pub fn snapshot_save_error(&self, error: &str) -> String {
+        match self.lang {
+            Language::DE => format!("Snapshot-Historie konnte nicht gespeichert werden: {}", error),
+            Language::EN => format!("Snapshot history could not be saved: {}", error),
+        }
     }
 }

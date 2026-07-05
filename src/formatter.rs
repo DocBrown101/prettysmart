@@ -6,7 +6,7 @@ use tabled::builder::Builder;
 use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
 use utils::get_nvme_pcie_info;
 
-const TABLE_WIDTH: usize = 70;
+const TABLE_WIDTH: usize = 90;
 const BANNER_WIDTH: usize = TABLE_WIDTH + 2;
 const TABLE_INNER_WIDTH: usize = TABLE_WIDTH - 2;
 
@@ -20,6 +20,7 @@ impl Default for TableFormatter {
         builder.push_record([
             format!("{}", L10N.table_property().cyan()),
             format!("{}", L10N.table_value().cyan()),
+            format!("{}", L10N.table_change().cyan()),
             format!("{}", L10N.table_status().cyan()),
         ]);
         TableFormatter { builder }
@@ -31,7 +32,7 @@ impl TableFormatter {
         Self::default()
     }
 
-    pub fn add_row(&mut self, name: &str, value: &str, status: Option<&str>) {
+    pub fn add_row(&mut self, name: &str, value: &str, change: &str, status: Option<&str>) {
         let status_text = match status {
             Some("KRITISCH") => L10N.status_critical().red().to_string(),
             Some("WARNUNG") => L10N.status_warning().yellow().to_string(),
@@ -46,7 +47,7 @@ impl TableFormatter {
         };
 
         self.builder
-            .push_record([name, &colored_value, &status_text]);
+            .push_record([name, &colored_value, change, &status_text]);
     }
 
     pub fn print_table(self, device: &StorageDevice, json: &Value) {

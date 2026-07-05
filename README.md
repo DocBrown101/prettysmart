@@ -40,6 +40,7 @@
 - **Multi-language Support**: German and English interfaces
 - **Color-coded Output**: Easy-to-read status indicators with color coding for critical, warning, and normal states
 - **Tabular Format**: Well-organized table display of SMART attributes
+- **Change Tracking**: Shows SMART value changes compared to the previous run
 
 ## Installation
 
@@ -51,6 +52,7 @@
 ### Building from Source
 
 Clone the repository and build:
+
 ```bash
 git clone https://github.com/DocBrown101/prettysmart.git
 cd prettysmart
@@ -62,11 +64,13 @@ The binary will be created at `target/release/prettysmart`.
 ## Usage
 
 Simply run the tool (requires root privileges):
+
 ```bash
 sudo ./target/release/prettysmart
 ```
 
 Or install it to your PATH:
+
 ```bash
 sudo cp target/release/prettysmart /usr/local/bin/
 sudo prettysmart
@@ -77,11 +81,13 @@ sudo prettysmart
 The tool automatically detects the system language based on `LANG` or `LC_ALL` environment variables. To force a specific language:
 
 For German:
+
 ```bash
 sudo LANG=de_DE.UTF-8 ./target/release/prettysmart
 ```
 
 For English:
+
 ```bash
 sudo LANG=en_US.UTF-8 ./target/release/prettysmart
 ```
@@ -89,29 +95,38 @@ sudo LANG=en_US.UTF-8 ./target/release/prettysmart
 ## Output Example
 
 The tool displays a table with SMART attributes for each detected storage device, including:
+
 - Device model and interface type
 - Current health status
+- Value changes since the previous run
 - Warning indicators (if any)
 - Detailed metrics in a tabular format
+
+## Snapshot History
+
+prettysmart stores SMART metric snapshots per drive serial number and displays the change compared to the previous run in the Change column.
 
 ## Build Commands
 
 ### Format Code
+
 ```bash
 cargo fmt
 ```
 
 ### Lint Code
+
 ```bash
 cargo clippy --all-targets --all-features
 ```
 
 ### Build Release
+
 ```bash
 cargo build --release
 ```
 
 ## Supported Devices
 
-- NVMe SSDs (via `/dev/nvme*`)  
+- NVMe SSDs (via `/dev/nvme*`)
 - SATA drives (via `/dev/sd*`, `/dev/hd*`)
