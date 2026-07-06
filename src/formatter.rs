@@ -46,8 +46,14 @@ impl TableFormatter {
             _ => value.green().to_string(),
         };
 
+        let colored_change = if change == "-" || change == "±0" {
+            change.to_string()
+        } else {
+            change.bright_blue().to_string()
+        };
+
         self.builder
-            .push_record([name, &colored_value, change, &status_text]);
+            .push_record([name, &colored_value, &colored_change, &status_text]);
     }
 
     pub fn print_table(self, device: &StorageDevice, json: &Value) {
