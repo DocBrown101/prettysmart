@@ -194,69 +194,35 @@ fn process_nvme(json: &Value, metrics: &mut MetricContext<'_>) {
         );
     }
 
-    // Handle power cycles
-    if let Some(raw_value) = health["power_cycles"].as_u64() {
-        metrics.add_row(
-            "nvme.power_cycles",
-            L10N.power_cycles_label(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            None,
-        );
-    }
-
-    // Handle media errors
-    if let Some(raw_value) = health["media_errors"].as_u64() {
-        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
-        metrics.add_row(
-            "nvme.media_errors",
-            L10N.media_errors(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle error log entries
-    if let Some(raw_value) = health["num_err_log_entries"].as_u64() {
-        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
-        metrics.add_row(
+    for (raw_value, key, name, alert) in [
+        (health["power_cycles"].as_u64(), "nvme.power_cycles", L10N.power_cycles_label(), None),
+        (health["media_errors"].as_u64(), "nvme.media_errors", L10N.media_errors(), Some("KRITISCH")),
+        (
+            health["num_err_log_entries"].as_u64(),
             "nvme.num_err_log_entries",
             L10N.num_err_log_entries(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle unsafe shutdowns
-    if let Some(raw_value) = health["unsafe_shutdowns"].as_u64() {
-        let status = if raw_value > 0 { Some("INFORMATION") } else { None };
-        metrics.add_row(
+            Some("WARNUNG"),
+        ),
+        (
+            health["unsafe_shutdowns"].as_u64(),
             "nvme.unsafe_shutdowns",
             L10N.unsafe_shutdowns(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle thermal throttling
-    if let Some(raw_value) = health["thermal_mgmt_temp1_trans_count"].as_u64() {
-        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
-        metrics.add_row(
+            Some("INFORMATION"),
+        ),
+        (
+            health["thermal_mgmt_temp1_trans_count"].as_u64(),
             "nvme.thermal_mgmt_temp1_trans_count",
             L10N.thermal_throttling(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
+            Some("WARNUNG"),
+        ),
+    ] {
+        if let Some(raw_value) = raw_value {
+            let status = alert.filter(|_| raw_value > 0);
+            metrics.add_row(key, name, &raw_value.to_string(), raw_value, DeltaFormat::MonotonicCount, status);
+        }
     }
+
+    // Handle thermal throttling duration
     if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_u64()
         && raw_value > 0
     {
@@ -305,69 +271,17 @@ fn process_sata(json: &Value, metrics: &mut MetricContext<'_>) {
     let get_attr = |id: u64| find_entry(attrs, id).and_then(|a| a["raw"]["value"].as_u64());
     let get_attr_value = |id: u64| find_entry(attrs, id).and_then(|a| a["value"].as_u64());
 
-    // Handle reallocated sectors
-    if let Some(raw_value) = get_attr(5) {
-        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
-        metrics.add_row(
-            "sata.reallocated_sectors",
-            L10N.reallocated_sectors(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle current pending sectors
-    if let Some(raw_value) = get_attr(197) {
-        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
-        metrics.add_row(
-            "sata.pending_sectors",
-            L10N.pending_sectors(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle offline uncorrectable sectors
-    if let Some(raw_value) = get_attr(198) {
-        let status = if raw_value >= 1 { Some("KRITISCH") } else { None };
-        metrics.add_row(
-            "sata.offline_uncorrectable_sectors",
-            L10N.offline_uncorrectable_sectors(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle UDMA CRC errors
-    if let Some(raw_value) = get_attr(199) {
-        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
-        metrics.add_row(
-            "sata.udma_crc_errors",
-            L10N.udma_crc_errors(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
-    }
-
-    // Handle spin retry count
-    if let Some(raw_value) = get_attr(10) {
-        let status = if raw_value >= 1 { Some("WARNUNG") } else { None };
-        metrics.add_row(
-            "sata.spin_retry_count",
-            L10N.spin_retry_count(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            status,
-        );
+    for (id, key, name, alert) in [
+        (5, "sata.reallocated_sectors", L10N.reallocated_sectors(), "KRITISCH"),
+        (197, "sata.pending_sectors", L10N.pending_sectors(), "KRITISCH"),
+        (198, "sata.offline_uncorrectable_sectors", L10N.offline_uncorrectable_sectors(), "KRITISCH"),
+        (199, "sata.udma_crc_errors", L10N.udma_crc_errors(), "WARNUNG"),
+        (10, "sata.spin_retry_count", L10N.spin_retry_count(), "WARNUNG"),
+    ] {
+        if let Some(raw_value) = get_attr(id) {
+            let status = (raw_value > 0).then_some(alert);
+            metrics.add_row(key, name, &raw_value.to_string(), raw_value, DeltaFormat::MonotonicCount, status);
+        }
     }
 
     // Handle operating hours
@@ -394,131 +308,28 @@ fn process_sata(json: &Value, metrics: &mut MetricContext<'_>) {
         );
     }
 
-    // Handle drive health remaining (wear) - ID 177
-    if let Some(wear) = get_attr_value(177) {
-        let status = if wear <= 10 {
-            Some("KRITISCH")
-        } else if wear <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", wear);
-        metrics.add_row(
-            "sata.drive_health_remaining",
-            L10N.drive_health_remaining(),
-            &value,
-            wear,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle SSD Life Left - ID 231
-    if let Some(life_left) = get_attr_value(231) {
-        let status = if life_left <= 10 {
-            Some("KRITISCH")
-        } else if life_left <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", life_left);
-        metrics.add_row(
-            "sata.ssd_life_remaining",
-            L10N.ssd_life_remaining(),
-            &value,
-            life_left,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle Available Reserved Space - ID 232
-    if let Some(reserved) = get_attr_value(232) {
-        let status = if reserved <= 10 {
-            Some("KRITISCH")
-        } else if reserved <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", reserved);
-        metrics.add_row(
-            "sata.reserved_capacity_available",
-            L10N.reserved_capacity_available(),
-            &value,
-            reserved,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle Available Reserved Space (alternative) - ID 170
-    if let Some(reserved_alt) = get_attr_value(170) {
-        let status = if reserved_alt <= 10 {
-            Some("KRITISCH")
-        } else if reserved_alt <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", reserved_alt);
-        metrics.add_row(
-            "sata.reserved_space_alt",
-            L10N.reserved_space_alt(),
-            &value,
-            reserved_alt,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle Media Wearout Indicator - ID 233
-    if let Some(wearout) = get_attr_value(233) {
-        let status = if wearout <= 10 {
-            Some("KRITISCH")
-        } else if wearout <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", wearout);
-        metrics.add_row(
-            "sata.media_wearout_indicator",
-            L10N.media_wearout_indicator(),
-            &value,
-            wearout,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle Wear Leveling Count - ID 173
-    if let Some(wear_level) = get_attr_value(173) {
-        let status = if wear_level <= 10 {
-            Some("KRITISCH")
-        } else if wear_level <= 30 {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{}%", wear_level);
-        metrics.add_row("sata.wear_leveling", L10N.wear_leveling(), &value, wear_level, DeltaFormat::Percent, status);
+    for (id, key, name) in [
+        (177, "sata.drive_health_remaining", L10N.drive_health_remaining()),
+        (231, "sata.ssd_life_remaining", L10N.ssd_life_remaining()),
+        (232, "sata.reserved_capacity_available", L10N.reserved_capacity_available()),
+        (170, "sata.reserved_space_alt", L10N.reserved_space_alt()),
+        (233, "sata.media_wearout_indicator", L10N.media_wearout_indicator()),
+        (173, "sata.wear_leveling", L10N.wear_leveling()),
+    ] {
+        if let Some(raw_value) = get_attr_value(id) {
+            let status = if raw_value <= 10 {
+                Some("KRITISCH")
+            } else if raw_value <= 30 {
+                Some("WARNUNG")
+            } else {
+                None
+            };
+            metrics.add_row(key, name, &format!("{}%", raw_value), raw_value, DeltaFormat::Percent, status);
+        }
     }
 
     // Handle total LBAs written - ID 246 (preferred over 241)
-    if let Some(lbas) = get_lba_attr(attrs, 246) {
-        let value = convert_lba_to_tb(lbas, 512.0);
-        metrics.add_row(
-            "sata.data_written_lbas",
-            L10N.data_written_approx_label(),
-            &value,
-            lbas,
-            DeltaFormat::MonotonicTb { multiplier: 512.0 },
-            None,
-        );
-    } else if let Some(lbas) = get_lba_attr(attrs, 241) {
+    if let Some(lbas) = get_lba_attr(attrs, 246).or_else(|| get_lba_attr(attrs, 241)) {
         let value = convert_lba_to_tb(lbas, 512.0);
         metrics.add_row(
             "sata.data_written_lbas",

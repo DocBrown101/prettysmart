@@ -1,10 +1,10 @@
 [package]
 name = "prettysmart"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 
 [dependencies]
 colored = "3.1.1"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-tabled = { version = "0.21.0", features = ["ansi"] } # https://github.com/zhiburt/tabled
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tabled = { version = "0.22.0", default-features = false, features = ["ansi"] } # https://github.com/zhiburt/tabled

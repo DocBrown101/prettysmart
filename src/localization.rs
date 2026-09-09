@@ -32,15 +32,10 @@ impl Localization {
     }
 
     fn detect_language() -> Language {
-        if let Ok(lang_var) = env::var("LANG")
-            && lang_var.starts_with("de")
-        {
-            return Language::DE;
-        }
-        if let Ok(lang_var) = env::var("LC_ALL")
-            && lang_var.starts_with("de")
-        {
-            return Language::DE;
+        for variable in ["LANG", "LC_ALL"] {
+            if env::var(variable).is_ok_and(|value| value.starts_with("de")) {
+                return Language::DE;
+            }
         }
         Language::EN
     }

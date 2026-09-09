@@ -27,33 +27,21 @@ pub fn find_storage_devices() -> io::Result<Vec<StorageDevice>> {
     let devices = stdout
         .lines()
         .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
+            let device_str = line.split('#').next()?.trim();
+            let mut tokens = device_str.split_whitespace();
+            let device_path = tokens.next()?;
+            let short_device_name = device_path.strip_prefix("/dev/")?;
+            if tokens.next()? != "-d" {
                 return None;
             }
+            let interface = tokens.next()?.to_lowercase();
 
-            let device_str = line.split('#').next()?.trim(); // Kommentarteil (nach '#') entfernen
-
-            if device_str.starts_with("/dev/") {
-                let tokens: Vec<&str> = device_str.split_whitespace().collect();
-
-                if tokens.len() >= 3 && tokens[1] == "-d" {
-                    let short_device_name = tokens[0].strip_prefix("/dev/")?.to_string();
-                    let device_path = tokens[0].to_string();
-                    let interface = tokens[2].to_lowercase();
-
-                    Some(StorageDevice {
-                        all_parts: device_str.to_string(),
-                        device_path,
-                        short_device_name,
-                        interface,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+            Some(StorageDevice {
+                all_parts: device_str.to_string(),
+                device_path: device_path.to_string(),
+                short_device_name: short_device_name.to_string(),
+                interface,
+            })
         })
         .collect();
 
