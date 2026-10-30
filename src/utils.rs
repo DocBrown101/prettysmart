@@ -8,6 +8,13 @@ pub struct StorageDevice {
     pub interface: String,         // -> nvme
 }
 
+impl StorageDevice {
+    pub fn is_nvme(&self) -> bool {
+        // SNT (SCSI-to-NVMe Translation) is used by USB-to-NVMe bridges.
+        self.interface == "nvme" || self.interface.starts_with("snt")
+    }
+}
+
 pub fn find_storage_devices() -> io::Result<Vec<StorageDevice>> {
     let output = Command::new("smartctl").args(["--scan-open"]).output()?;
 

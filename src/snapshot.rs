@@ -29,6 +29,7 @@ pub enum DeltaFormat {
     MonotonicCount,
     MonotonicHours,
     MonotonicMinutes,
+    MonotonicSeconds,
     MonotonicTb { multiplier: f64 },
 }
 
@@ -119,6 +120,7 @@ pub fn format_change(previous: Option<u64>, current: u64, format: DeltaFormat) -
         DeltaFormat::Count | DeltaFormat::MonotonicCount => format!("{}{}", sign, absolute),
         DeltaFormat::Hours | DeltaFormat::MonotonicHours => format!("{}{} h", sign, absolute),
         DeltaFormat::Minutes | DeltaFormat::MonotonicMinutes => format!("{}{} min", sign, absolute),
+        DeltaFormat::MonotonicSeconds => format!("{}{} s", sign, absolute),
         DeltaFormat::Percent => format!("{}{}%", sign, absolute),
         DeltaFormat::Tb { multiplier } | DeltaFormat::MonotonicTb { multiplier } => format_byte_change(sign, absolute, multiplier),
     }
@@ -144,7 +146,11 @@ impl DeltaFormat {
     fn is_monotonic(self) -> bool {
         matches!(
             self,
-            DeltaFormat::MonotonicCount | DeltaFormat::MonotonicHours | DeltaFormat::MonotonicMinutes | DeltaFormat::MonotonicTb { .. }
+            DeltaFormat::MonotonicCount
+                | DeltaFormat::MonotonicHours
+                | DeltaFormat::MonotonicMinutes
+                | DeltaFormat::MonotonicSeconds
+                | DeltaFormat::MonotonicTb { .. }
         )
     }
 }

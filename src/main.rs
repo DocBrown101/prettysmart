@@ -63,9 +63,10 @@ fn main() {
         {
             let mut metrics = MetricContext::new(&mut formatter, previous_metrics.as_ref(), &mut current_metrics);
 
-            match device.interface.as_str() {
-                "nvme" => process_nvme(&json, &mut metrics),
-                _ => process_sata(&json, &mut metrics),
+            if device.is_nvme() {
+                process_nvme(&json, &mut metrics);
+            } else {
+                process_sata(&json, &mut metrics);
             }
         }
 
@@ -226,13 +227,13 @@ fn process_nvme(json: &Value, metrics: &mut MetricContext<'_>) {
     if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_u64()
         && raw_value > 0
     {
-        let value = format!("{} min", raw_value);
+        let value = format!("{} s", raw_value);
         metrics.add_row(
             "nvme.thermal_mgmt_temp1_total_time",
             L10N.overall_throttled(),
             &value,
             raw_value,
-            DeltaFormat::MonotonicMinutes,
+            DeltaFormat::MonotonicSeconds,
             Some("WARNUNG"),
         );
     }

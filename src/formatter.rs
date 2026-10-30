@@ -88,14 +88,16 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
     header_content.push_str(&device_header_line(device, json));
     header_content.push('\n');
 
-    if device.interface == "nvme" {
+    if device.is_nvme() {
         if let Some(model) = json["model_name"].as_str() {
             header_content.push_str(&format!("{}: {}\n", L10N.model_number(), model.trim()));
         }
         if let Some(nvme_version) = json["nvme_version"]["string"].as_str() {
             header_content.push_str(&format!("{}: {}\n", L10N.nvme_version(), nvme_version.trim()));
         }
-        if let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name) {
+        if device.interface == "nvme"
+            && let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name)
+        {
             header_content.push_str(&format!("{} {} (max: {})", L10N.transmission_mode(), current, maximum));
         }
     } else {
