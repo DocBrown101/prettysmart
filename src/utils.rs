@@ -16,7 +16,9 @@ impl StorageDevice {
 }
 
 pub fn find_storage_devices() -> io::Result<Vec<StorageDevice>> {
-    let output = Command::new("smartctl").args(["--scan-open"]).output()?;
+    let output = Command::new("smartctl")
+        .args(["--scan-open"])
+        .output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -66,7 +68,10 @@ pub fn nvme_controller_name(nvme_name: &str) -> &str {
         return nvme_name;
     };
 
-    let digits_len = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    let digits_len = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
     if digits_len == 0 {
         return nvme_name;
     }

@@ -1,10 +1,19 @@
 [package]
 name = "prettysmart"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2024"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+wildcard_imports = "warn"
+enum_glob_use = "warn"
+redundant_clone = "warn"
+unwrap_used = "warn"
 
 [dependencies]
 colored = "3.1.1"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 tabled = { version = "0.22.0", default-features = false, features = ["ansi"] } # https://github.com/zhiburt/tabled

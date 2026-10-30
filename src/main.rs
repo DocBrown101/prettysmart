@@ -17,39 +17,48 @@ fn main() {
     let (mut snapshot_store, save_snapshots) = match SnapshotStore::load() {
         Ok(store) => (store, true),
         Err(err) => {
-            eprintln!("{}", L10N.snapshot_load_error(&err.to_string()).yellow());
+            let message = L10N.snapshot_load_error(&err.to_string());
+            eprintln!("{}", message.yellow());
             (SnapshotStore::default(), false)
         }
     };
 
     let devices = find_storage_devices().unwrap_or_else(|err| {
-        eprintln!("{}", err.to_string().red());
+        let message = err.to_string();
+        eprintln!("{}", message.red());
         std::process::exit(1);
     });
     if devices.is_empty() {
-        eprintln!("{}", L10N.no_devices().red());
+        let message = L10N.no_devices();
+        eprintln!("{}", message.red());
         std::process::exit(1);
     }
 
     for device in devices {
-        let parts: Vec<&str> = device.all_parts.split_whitespace().collect();
+        let parts: Vec<&str> = device
+            .all_parts
+            .split_whitespace()
+            .collect();
         let output = Command::new("smartctl")
             .args(["-i", "-H", "-A", "-j"])
             .args(&parts)
             .output()
             .unwrap_or_else(|_e| {
-                eprintln!("{}", L10N.smartctl_start_error().red());
+                let message = L10N.smartctl_start_error();
+                eprintln!("{}", message.red());
                 std::process::exit(1);
             });
 
         let json: Value = match serde_json::from_slice(&output.stdout) {
             Ok(json) => json,
             Err(_) if !output.status.success() => {
-                eprintln!("{}", L10N.smart_data_error(&device.device_path).red());
+                let message = L10N.smart_data_error(&device.device_path);
+                eprintln!("{}", message.red());
                 continue;
             }
             Err(_) => {
-                eprintln!("{}", L10N.json_parse_error().red());
+                let message = L10N.json_parse_error();
+                eprintln!("{}", message.red());
                 std::process::exit(1);
             }
         };
@@ -57,7 +66,11 @@ fn main() {
         let serial_number = serial_number(&json).map(str::to_string);
         let previous_metrics = serial_number
             .as_deref()
-            .and_then(|serial| snapshot_store.latest_metrics(serial).cloned());
+            .and_then(|serial| {
+                snapshot_store
+                    .latest_metrics(serial)
+                    .cloned()
+            });
         let mut current_metrics = BTreeMap::new();
 
         {
@@ -78,7 +91,8 @@ fn main() {
     }
 
     if save_snapshots && let Err(err) = snapshot_store.save() {
-        eprintln!("{}", L10N.snapshot_save_error(&err.to_string()).yellow());
+        let message = L10N.snapshot_save_error(&err.to_string());
+        eprintln!("{}", message.yellow());
     }
 }
 
@@ -86,7 +100,10 @@ fn process_nvme(json: &Value, metrics: &mut MetricContext<'_>) {
     let health = &json["nvme_smart_health_information_log"];
 
     // Handle critical warning with bit decoding
-    if let Some(warn) = health["critical_warning"].as_u64().filter(|&w| w != 0) {
+    if let Some(warn) = health["critical_warning"]
+        .as_u64()
+        .filter(|&w| w != 0)
+    {
         println!("{}", L10N.critical_warning(warn).red().bold());
 
         // Decode individual warning bits
@@ -263,7 +280,9 @@ fn process_sata(json: &Value, metrics: &mut MetricContext<'_>) {
         let attr = find_entry(attrs, id)?;
 
         if attr_uses_lba_units(attr) {
-            attr["raw"]["value"].as_u64().filter(|&v| v > 0)
+            attr["raw"]["value"]
+                .as_u64()
+                .filter(|&v| v > 0)
         } else {
             None
         }
@@ -377,7 +396,9 @@ impl<'a> MetricContext<'a> {
             .and_then(|metrics| metrics.get(key).copied());
         let change = format_change(previous, current, delta_format);
 
-        self.formatter.add_row(name, value, &change, status);
-        self.current_metrics.insert(key.to_string(), current);
+        self.formatter
+            .add_row(name, value, &change, status);
+        self.current_metrics
+            .insert(key.to_string(), current);
     }
 }

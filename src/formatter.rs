@@ -35,8 +35,14 @@ impl TableFormatter {
     pub fn add_row(&mut self, name: &str, value: &str, change: &str, status: Option<&str>) {
         let status_text = match status {
             Some("KRITISCH") => L10N.status_critical().red().to_string(),
-            Some("WARNUNG") => L10N.status_warning().yellow().to_string(),
-            Some("INFORMATION") => L10N.status_information().bright_blue().to_string(),
+            Some("WARNUNG") => L10N
+                .status_warning()
+                .yellow()
+                .to_string(),
+            Some("INFORMATION") => L10N
+                .status_information()
+                .bright_blue()
+                .to_string(),
             _ => L10N.status_ok().green().to_string(),
         };
 
@@ -128,11 +134,16 @@ fn device_header_line(device: &StorageDevice, json: &Value) -> String {
     let status_colored = if passed {
         L10N.status_ok().green().to_string()
     } else {
-        L10N.status_critical().red().bold().to_string()
+        L10N.status_critical()
+            .red()
+            .bold()
+            .to_string()
     };
 
     let occupied = left_plain.chars().count() + status_plain.chars().count();
-    let padding = TABLE_INNER_WIDTH.saturating_sub(occupied).max(1);
+    let padding = TABLE_INNER_WIDTH
+        .saturating_sub(occupied)
+        .max(1);
 
     format!("{}{}{}", left_colored, " ".repeat(padding), status_colored)
 }
