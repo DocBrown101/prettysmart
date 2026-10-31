@@ -3,13 +3,15 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::process::Command;
 
+mod ata_smart;
+mod metric_context;
+mod nvme_smart;
+
+use metric_context::MetricContext;
 use prettysmart::formatter::{TableFormatter, print_header};
 use prettysmart::localization::L10N;
-use prettysmart::snapshot::{DeltaFormat, SnapshotStore, format_change, serial_number};
-use prettysmart::utils::{convert_lba_to_tb, find_storage_devices};
-
-const ENDURANCE_WARN: u64 = 70;
-const ENDURANCE_CRIT: u64 = 90;
+use prettysmart::snapshot::{SnapshotStore, serial_number};
+use prettysmart::utils::{find_storage_devices, print_smartctl_messages, smartctl_read_failed};
 
 fn main() {
     print_header(L10N.header_title());
@@ -34,59 +36,93 @@ fn main() {
         std::process::exit(1);
     }
 
+    let mut query_failed = false;
     for device in devices {
-        let parts: Vec<&str> = device
-            .all_parts
-            .split_whitespace()
-            .collect();
-        let output = Command::new("smartctl")
+        let output = match Command::new("smartctl")
             .args(["-i", "-H", "-A", "-j"])
-            .args(&parts)
+            .args(device.all_parts.split_whitespace())
             .output()
-            .unwrap_or_else(|_e| {
-                let message = L10N.smartctl_start_error();
-                eprintln!("{}", message.red());
-                std::process::exit(1);
-            });
+        {
+            Ok(output) => output,
+            Err(err) => {
+                eprintln!("{}: {}: {}", device.device_path, L10N.smartctl_start_error(), err);
+                query_failed = true;
+                continue;
+            }
+        };
 
         let json: Value = match serde_json::from_slice(&output.stdout) {
             Ok(json) => json,
-            Err(_) if !output.status.success() => {
-                let message = L10N.smart_data_error(&device.device_path);
-                eprintln!("{}", message.red());
+            Err(_) => {
+                eprintln!("{}: {}", device.device_path, L10N.json_parse_error());
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr).trim());
+                query_failed = true;
                 continue;
             }
-            Err(_) => {
-                let message = L10N.json_parse_error();
-                eprintln!("{}", message.red());
-                std::process::exit(1);
-            }
         };
+        print_smartctl_messages(&json, &device.device_path);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            eprintln!("{}: {}", device.device_path, stderr.trim());
+        }
         let mut formatter = TableFormatter::new();
-        let serial_number = serial_number(&json).map(str::to_string);
-        let previous_metrics = serial_number
-            .as_deref()
-            .and_then(|serial| {
-                snapshot_store
-                    .latest_metrics(serial)
-                    .cloned()
+        let protocol = json["device"]["protocol"]
+            .as_str()
+            .unwrap_or_else(|| {
+                if device.is_nvme() {
+                    "NVMe"
+                } else if json["ata_smart_attributes"]["table"].is_array() || device.interface == "ata" || device.interface.starts_with("sat") {
+                    "ATA"
+                } else {
+                    "unknown"
+                }
             });
+        if !matches!(protocol, "NVMe" | "ATA") {
+            eprintln!("{}: {} ({})", device.device_path, L10N.unsupported_protocol(), protocol);
+            formatter.add_row(L10N.smart_data(), L10N.unsupported_protocol(), "-", Some("UNAVAILABLE"));
+            formatter.print_table(&device, &json);
+            query_failed = true;
+            continue;
+        }
+        let is_nvme = protocol == "NVMe";
+        let has_data = if is_nvme {
+            json["nvme_smart_health_information_log"]
+                .as_object()
+                .is_some_and(|health| !health.is_empty())
+        } else {
+            json["ata_smart_attributes"]["table"]
+                .as_array()
+                .is_some_and(|attrs| !attrs.is_empty())
+        };
+        // Health-warning bits (3–7) do not invalidate the measurements.
+        let read_failed = smartctl_read_failed(&output, &json) || !has_data || !json["smart_status"]["passed"].is_boolean();
+        if read_failed {
+            eprintln!(
+                "{}",
+                L10N.smart_data_error(&device.device_path)
+                    .red()
+            );
+            formatter.add_row(L10N.smart_data(), L10N.unavailable(), "-", Some("UNAVAILABLE"));
+            query_failed = true;
+        }
+        let serial_number = serial_number(&json);
+        let previous_metrics = serial_number.and_then(|serial| snapshot_store.latest_metrics(serial));
         let mut current_metrics = BTreeMap::new();
 
         {
-            let mut metrics = MetricContext::new(&mut formatter, previous_metrics.as_ref(), &mut current_metrics);
+            let mut metrics = MetricContext::new(&mut formatter, previous_metrics, &mut current_metrics);
 
-            if device.is_nvme() {
-                process_nvme(&json, &mut metrics);
+            if is_nvme {
+                nvme_smart::process(&json, &mut metrics);
             } else {
-                process_sata(&json, &mut metrics);
+                ata_smart::process(&json, &mut metrics);
             }
         }
 
         formatter.print_table(&device, &json);
 
-        if let Some(serial_number) = serial_number {
-            snapshot_store.append(&serial_number, current_metrics);
+        if !read_failed && let Some(serial_number) = serial_number {
+            snapshot_store.append(serial_number, current_metrics);
         }
     }
 
@@ -94,311 +130,7 @@ fn main() {
         let message = L10N.snapshot_save_error(&err.to_string());
         eprintln!("{}", message.yellow());
     }
-}
-
-fn process_nvme(json: &Value, metrics: &mut MetricContext<'_>) {
-    let health = &json["nvme_smart_health_information_log"];
-
-    // Handle critical warning with bit decoding
-    if let Some(warn) = health["critical_warning"]
-        .as_u64()
-        .filter(|&w| w != 0)
-    {
-        println!("{}", L10N.critical_warning(warn).red().bold());
-
-        // Decode individual warning bits
-        let mut warnings = Vec::new();
-        if warn & 0x01 != 0 {
-            warnings.push(L10N.nvme_warning_spare_capacity());
-        }
-        if warn & 0x02 != 0 {
-            warnings.push(L10N.nvme_warning_temperature());
-        }
-        if warn & 0x04 != 0 {
-            warnings.push(L10N.nvme_warning_reliability());
-        }
-        if warn & 0x08 != 0 {
-            warnings.push(L10N.nvme_warning_read_only());
-        }
-        if warn & 0x10 != 0 {
-            warnings.push(L10N.nvme_warning_volatile_backup());
-        }
-
-        if !warnings.is_empty() {
-            println!("  → {}", warnings.join(", "));
-        }
-    }
-
-    // Handle spare blocks
-    if let (Some(spare), Some(spare_thresh)) = (health["available_spare"].as_u64(), health["available_spare_threshold"].as_u64()) {
-        let status = if spare <= spare_thresh {
-            Some("KRITISCH")
-        } else if spare <= spare_thresh.saturating_add(10) {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let name = format!("{} ({}%)", L10N.spare_blocks(), spare_thresh);
-        let value = format!("{}%", spare);
-        metrics.add_row("nvme.available_spare", &name, &value, spare, DeltaFormat::Percent, status);
-    }
-
-    // Handle drive health
-    if let Some(pct_used) = health["percentage_used"].as_u64() {
-        let remaining = 100_u64.saturating_sub(pct_used);
-        let status = if pct_used >= ENDURANCE_CRIT {
-            Some("KRITISCH")
-        } else if pct_used >= ENDURANCE_WARN {
-            Some("WARNUNG")
-        } else {
-            None
-        };
-        let value = format!("{} {}", remaining, L10N.remaining());
-        metrics.add_row(
-            "nvme.drive_health_remaining",
-            L10N.drive_health(),
-            &value,
-            remaining,
-            DeltaFormat::Percent,
-            status,
-        );
-    }
-
-    // Handle temperature - critical composite temperature time
-    if let Some(raw_value) = health["critical_comp_time"].as_u64() {
-        let status = if raw_value > 0 { Some("WARNUNG") } else { None };
-        let value = format!("{} min", raw_value);
-        metrics.add_row(
-            "nvme.critical_comp_time",
-            L10N.critical_comp_time(),
-            &value,
-            raw_value,
-            DeltaFormat::MonotonicMinutes,
-            status,
-        );
-    }
-
-    // Handle data units read/written
-    if let Some(raw_value) = health["data_units_read"].as_u64() {
-        metrics.add_row(
-            "nvme.data_units_read",
-            L10N.data_read_label(),
-            &convert_lba_to_tb(raw_value, 512000.0),
-            raw_value,
-            DeltaFormat::MonotonicTb { multiplier: 512000.0 },
-            None,
-        );
-    }
-    if let Some(raw_value) = health["data_units_written"].as_u64() {
-        metrics.add_row(
-            "nvme.data_units_written",
-            L10N.data_written_label(),
-            &convert_lba_to_tb(raw_value, 512000.0),
-            raw_value,
-            DeltaFormat::MonotonicTb { multiplier: 512000.0 },
-            None,
-        );
-    }
-
-    // Handle power on hours
-    if let Some(raw_value) = health["power_on_hours"].as_u64() {
-        metrics.add_row(
-            "nvme.power_on_hours",
-            L10N.operating_hours_label(),
-            &L10N.operating_hours(raw_value),
-            raw_value,
-            DeltaFormat::MonotonicHours,
-            None,
-        );
-    }
-
-    for (raw_value, key, name, alert) in [
-        (health["power_cycles"].as_u64(), "nvme.power_cycles", L10N.power_cycles_label(), None),
-        (health["media_errors"].as_u64(), "nvme.media_errors", L10N.media_errors(), Some("KRITISCH")),
-        (
-            health["num_err_log_entries"].as_u64(),
-            "nvme.num_err_log_entries",
-            L10N.num_err_log_entries(),
-            Some("WARNUNG"),
-        ),
-        (
-            health["unsafe_shutdowns"].as_u64(),
-            "nvme.unsafe_shutdowns",
-            L10N.unsafe_shutdowns(),
-            Some("INFORMATION"),
-        ),
-        (
-            health["thermal_mgmt_temp1_trans_count"].as_u64(),
-            "nvme.thermal_mgmt_temp1_trans_count",
-            L10N.thermal_throttling(),
-            Some("WARNUNG"),
-        ),
-    ] {
-        if let Some(raw_value) = raw_value {
-            let status = alert.filter(|_| raw_value > 0);
-            metrics.add_row(key, name, &raw_value.to_string(), raw_value, DeltaFormat::MonotonicCount, status);
-        }
-    }
-
-    // Handle thermal throttling duration
-    if let Some(raw_value) = health["thermal_mgmt_temp1_total_time"].as_u64()
-        && raw_value > 0
-    {
-        let value = format!("{} s", raw_value);
-        metrics.add_row(
-            "nvme.thermal_mgmt_temp1_total_time",
-            L10N.overall_throttled(),
-            &value,
-            raw_value,
-            DeltaFormat::MonotonicSeconds,
-            Some("WARNUNG"),
-        );
-    }
-}
-
-fn process_sata(json: &Value, metrics: &mut MetricContext<'_>) {
-    let attrs = &json["ata_smart_attributes"]["table"];
-
-    fn find_entry(attrs: &Value, id: u64) -> Option<&Value> {
-        attrs
-            .as_array()?
-            .iter()
-            .find(|a| a["id"].as_u64() == Some(id))
-    }
-
-    fn attr_uses_lba_units(attr: &Value) -> bool {
-        attr["name"]
-            .as_str()
-            .map(|name| {
-                let name = name.to_ascii_lowercase();
-                name.contains("lba") || name.contains("sector")
-            })
-            .unwrap_or(false)
-    }
-
-    fn get_lba_attr(attrs: &Value, id: u64) -> Option<u64> {
-        let attr = find_entry(attrs, id)?;
-
-        if attr_uses_lba_units(attr) {
-            attr["raw"]["value"]
-                .as_u64()
-                .filter(|&v| v > 0)
-        } else {
-            None
-        }
-    }
-
-    let get_attr = |id: u64| find_entry(attrs, id).and_then(|a| a["raw"]["value"].as_u64());
-    let get_attr_value = |id: u64| find_entry(attrs, id).and_then(|a| a["value"].as_u64());
-
-    for (id, key, name, alert) in [
-        (5, "sata.reallocated_sectors", L10N.reallocated_sectors(), "KRITISCH"),
-        (197, "sata.pending_sectors", L10N.pending_sectors(), "KRITISCH"),
-        (198, "sata.offline_uncorrectable_sectors", L10N.offline_uncorrectable_sectors(), "KRITISCH"),
-        (199, "sata.udma_crc_errors", L10N.udma_crc_errors(), "WARNUNG"),
-        (10, "sata.spin_retry_count", L10N.spin_retry_count(), "WARNUNG"),
-    ] {
-        if let Some(raw_value) = get_attr(id) {
-            let status = (raw_value > 0).then_some(alert);
-            metrics.add_row(key, name, &raw_value.to_string(), raw_value, DeltaFormat::MonotonicCount, status);
-        }
-    }
-
-    // Handle operating hours
-    if let Some(raw_value) = get_attr(9) {
-        metrics.add_row(
-            "sata.power_on_hours",
-            L10N.operating_hours_label(),
-            &L10N.operating_hours(raw_value),
-            raw_value,
-            DeltaFormat::MonotonicHours,
-            None,
-        );
-    }
-
-    // Handle power cycles
-    if let Some(raw_value) = get_attr(12) {
-        metrics.add_row(
-            "sata.power_cycles",
-            L10N.power_cycles_label(),
-            &raw_value.to_string(),
-            raw_value,
-            DeltaFormat::MonotonicCount,
-            None,
-        );
-    }
-
-    for (id, key, name) in [
-        (177, "sata.drive_health_remaining", L10N.drive_health_remaining()),
-        (231, "sata.ssd_life_remaining", L10N.ssd_life_remaining()),
-        (232, "sata.reserved_capacity_available", L10N.reserved_capacity_available()),
-        (170, "sata.reserved_space_alt", L10N.reserved_space_alt()),
-        (233, "sata.media_wearout_indicator", L10N.media_wearout_indicator()),
-        (173, "sata.wear_leveling", L10N.wear_leveling()),
-    ] {
-        if let Some(raw_value) = get_attr_value(id) {
-            let status = if raw_value <= 10 {
-                Some("KRITISCH")
-            } else if raw_value <= 30 {
-                Some("WARNUNG")
-            } else {
-                None
-            };
-            metrics.add_row(key, name, &format!("{}%", raw_value), raw_value, DeltaFormat::Percent, status);
-        }
-    }
-
-    // Handle total LBAs written - ID 246 (preferred over 241)
-    if let Some(lbas) = get_lba_attr(attrs, 246).or_else(|| get_lba_attr(attrs, 241)) {
-        let value = convert_lba_to_tb(lbas, 512.0);
-        metrics.add_row(
-            "sata.data_written_lbas",
-            L10N.data_written_approx_label(),
-            &value,
-            lbas,
-            DeltaFormat::MonotonicTb { multiplier: 512.0 },
-            None,
-        );
-    }
-
-    // Handle total LBAs read - ID 242
-    if let Some(lbas) = get_lba_attr(attrs, 242) {
-        let value = convert_lba_to_tb(lbas, 512.0);
-        metrics.add_row(
-            "sata.data_read_lbas",
-            L10N.data_read_total(),
-            &value,
-            lbas,
-            DeltaFormat::MonotonicTb { multiplier: 512.0 },
-            None,
-        );
-    }
-}
-
-struct MetricContext<'a> {
-    formatter: &'a mut TableFormatter,
-    previous_metrics: Option<&'a BTreeMap<String, u64>>,
-    current_metrics: &'a mut BTreeMap<String, u64>,
-}
-
-impl<'a> MetricContext<'a> {
-    fn new(formatter: &'a mut TableFormatter, previous_metrics: Option<&'a BTreeMap<String, u64>>, current_metrics: &'a mut BTreeMap<String, u64>) -> Self {
-        Self {
-            formatter,
-            previous_metrics,
-            current_metrics,
-        }
-    }
-
-    fn add_row(&mut self, key: &str, name: &str, value: &str, current: u64, delta_format: DeltaFormat, status: Option<&str>) {
-        let previous = self
-            .previous_metrics
-            .and_then(|metrics| metrics.get(key).copied());
-        let change = format_change(previous, current, delta_format);
-
-        self.formatter
-            .add_row(name, value, &change, status);
-        self.current_metrics
-            .insert(key.to_string(), current);
+    if query_failed {
+        std::process::exit(1);
     }
 }

@@ -27,6 +27,16 @@ jobs:
         with:
           toolchain: stable
           override: true
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       # 3. Start SonarQube Scan
       - name: Start SonarQube Scan

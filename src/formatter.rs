@@ -43,12 +43,15 @@ impl TableFormatter {
                 .status_information()
                 .bright_blue()
                 .to_string(),
+            Some("NEUTRAL") => "-".to_string(),
+            Some("UNAVAILABLE") => L10N.unavailable().to_string(),
             _ => L10N.status_ok().green().to_string(),
         };
 
         let colored_value = match status {
             Some("KRITISCH") => value.red().bold().to_string(),
             Some("WARNUNG") => value.yellow().to_string(),
+            Some("NEUTRAL" | "UNAVAILABLE" | "INFORMATION") => value.to_string(),
             _ => value.green().to_string(),
         };
 
@@ -94,7 +97,22 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
     header_content.push_str(&device_header_line(device, json));
     header_content.push('\n');
 
-    if device.is_nvme() {
+    for (field, label) in [("serial_number", L10N.serial_number_label()), ("firmware_version", L10N.firmware())] {
+        if let Some(value) = json[field].as_str() {
+            header_content.push_str(&format!("{}: {}\n", label, value.trim()));
+        }
+    }
+    if let Some(bytes) = json["user_capacity"]["bytes"]
+        .as_u64()
+        .or_else(|| json["nvme_total_capacity"].as_u64())
+    {
+        header_content.push_str(&format!("{}: {:.2} GB\n", L10N.capacity(), bytes as f64 / 1e9));
+    }
+
+    if json["device"]["protocol"]
+        .as_str()
+        .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe")
+    {
         if let Some(model) = json["model_name"].as_str() {
             header_content.push_str(&format!("{}: {}\n", L10N.model_number(), model.trim()));
         }
@@ -122,22 +140,17 @@ fn device_header_line(device: &StorageDevice, json: &Value) -> String {
     let left_plain = format!("{} ({})", device.device_path, device.interface);
     let left_colored = format!("{} ({})", device.device_path.green(), device.interface.cyan());
 
-    let Some(passed) = json["smart_status"]["passed"].as_bool() else {
-        return left_colored;
+    let passed = json["smart_status"]["passed"].as_bool();
+    let status = match passed {
+        Some(true) => L10N.status_ok(),
+        Some(false) => L10N.status_critical(),
+        None => L10N.unavailable(),
     };
-
-    let status_plain = if passed {
-        L10N.status_ok().to_string()
-    } else {
-        L10N.status_critical().to_string()
-    };
-    let status_colored = if passed {
-        L10N.status_ok().green().to_string()
-    } else {
-        L10N.status_critical()
-            .red()
-            .bold()
-            .to_string()
+    let status_plain = format!("{}: {}", L10N.smart_status(), status);
+    let status_colored = match passed {
+        Some(true) => status_plain.green().to_string(),
+        Some(false) => status_plain.red().bold().to_string(),
+        None => status_plain.clone(),
     };
 
     let occupied = left_plain.chars().count() + status_plain.chars().count();

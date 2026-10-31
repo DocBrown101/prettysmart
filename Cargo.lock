@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "prettysmart"
-version = "0.8.4"
+version = "0.9.1"
 dependencies = [
  "colored",
  "serde",

@@ -20,6 +20,7 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
             "model_name": "Test SSD",
             "serial_number": "TEST-SERIAL",
             "smart_status": { "passed": true },
+            "power_on_time": { "hours": 123 },
             "nvme_version": { "string": "1.3" },
             "nvme_smart_health_information_log": {
                 "available_spare": 100,
@@ -100,7 +101,7 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
         } else {
             assert!(!stdout.contains("NVMe Version:"), "{stdout}");
             assert!(stdout.contains("123 h"), "{stdout}");
-            assert_eq!(metrics["sata.power_on_hours"], 123);
+            assert_eq!(metrics["sata.power_on_time.hours"], 123);
             assert!(metrics["nvme.power_on_hours"].is_null());
         }
     }

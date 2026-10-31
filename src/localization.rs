@@ -32,9 +32,11 @@ impl Localization {
     }
 
     fn detect_language() -> Language {
-        for variable in ["LANG", "LC_ALL"] {
-            if env::var(variable).is_ok_and(|value| value.starts_with("de")) {
-                return Language::DE;
+        for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            if let Ok(value) = env::var(variable)
+                && !value.trim().is_empty()
+            {
+                return if value.starts_with("de") { Language::DE } else { Language::EN };
             }
         }
         Language::EN
@@ -44,16 +46,12 @@ impl Localization {
         critical_comp_time => "Zeit über krit. Temperatur", "Critical comp time";
         critical_warning_label => "⚠️ KRITISCHE WARNUNG", "⚠️ CRITICAL WARNING";
         data_read_label => "Daten gelesen", "Data read";
-        data_read_total => "Gelesene Daten (gesamt)", "Total data read";
-        data_written_approx_label => "Daten geschrieben (ca.)", "Data written (approx.)";
         data_written_label => "Daten geschrieben", "Data written";
         device_model => "Gerätemodell", "Device Model";
-        drive_health => "Laufwerk-Gesundheit", "Drive Health";
-        drive_health_remaining => "Drive Health (verbleibend)", "Drive Health (remaining)";
+        drive_health => "Geschätzte Rest-Schreibausdauer", "Estimated remaining write endurance";
         header_title => "Speichermedien-Diagnose", "Storage Media Diagnostics";
         json_parse_error => "JSON-Parsing fehlgeschlagen", "JSON parsing failed";
         media_errors => "Medienfehler", "Media Errors";
-        media_wearout_indicator => "SSD-Verschleiß", "Media Wearout Indicator";
         model_number => "Modellnummer", "Model Number";
         no_devices => "Keine Laufwerke gefunden", "No drives found";
         num_err_log_entries => "Fehlerprotokoll-Einträge", "Num err log entries";
@@ -72,12 +70,10 @@ impl Localization {
         reallocated_sectors => "Reallocated Sectors", "Reallocated Sectors";
         remaining => "% verbleibend", "% remaining";
         reserved_capacity_available => "Reservierte Kapazität verfügbar", "Reserved Capacity Available";
-        reserved_space_alt => "Res. Speicher (Alt)", "Reserved Space (Alt)";
         sata_version => "SATA-Version", "SATA Version";
         smartctl_start_error => "smartctl konnte nicht gestartet werden", "smartctl could not be started";
         spare_blocks => "Verfügbare Ersatzblöcke", "Available Spare Blocks";
         spin_retry_count => "Spin Retry Count", "Spin Retry Count";
-        ssd_life_remaining => "SSD-Lebensdauer verbleibend", "SSD Life Remaining";
         status_critical => "❌ KRITISCH", "❌ CRITICAL";
         status_information => "Info", "Information";
         status_ok => "✓ OK", "✓ OK";
@@ -90,7 +86,22 @@ impl Localization {
         transmission_mode => "Übertragungsmodus:", "Transmission mode:";
         udma_crc_errors => "UDMA-CRC-Fehler", "UDMA CRC-err";
         unsafe_shutdowns => "Unsichere Abschaltungen", "Unsafe Shutdowns";
-        wear_leveling => "Verschleißausgleich", "Wear Leveling";
+        endurance_used => "Geschätzter Ausdauerverbrauch", "Estimated endurance used";
+        nvme_warning_persistent_memory => "Persistenter Speicher unzuverlässig/schreibgeschützt", "Persistent memory unreliable/read-only";
+        unknown_warning_bits => "Unbekannte Warnbits", "Unknown warning bits";
+        unavailable => "Nicht verfügbar", "Unavailable";
+        unsupported_protocol => "Nicht unterstütztes Geräteprotokoll", "Unsupported device protocol";
+        smart_data => "SMART-Daten", "SMART data";
+        smart_status => "SMART-Gesamtstatus", "SMART overall status";
+        serial_number_label => "Seriennummer", "Serial number";
+        firmware => "Firmware", "Firmware";
+        capacity => "Kapazität", "Capacity";
+        raw_value => "Rohwert", "Raw value";
+        normalized_value => "Normalisiert", "Normalized";
+        threshold => "Grenzwert", "Threshold";
+        failed_now => "Grenzwert aktuell verletzt", "Threshold failed now";
+        failed_past => "Grenzwert früher verletzt", "Threshold failed in the past";
+        reported_uncorrectable => "Gemeldete unkorrigierbare Fehler", "Reported uncorrectable errors";
     }
 
     pub fn smart_data_error(&self, device: &str) -> String {

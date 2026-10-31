@@ -1,4 +1,24 @@
+use serde_json::Value;
+use std::process::Output;
 use std::{fs, io, path::Path, process::Command};
+
+pub fn smartctl_read_failed(output: &Output, json: &Value) -> bool {
+    let status = output.status.code().unwrap_or(1) as u64
+        | json["smartctl"]["exit_status"]
+            .as_u64()
+            .unwrap_or(0);
+    !json.is_object() || status & 0b111 != 0
+}
+
+pub fn print_smartctl_messages(json: &Value, device: &str) {
+    if let Some(messages) = json["smartctl"]["messages"].as_array() {
+        for message in messages {
+            if let Some(text) = message["string"].as_str() {
+                eprintln!("{}: {}", device, text.trim());
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct StorageDevice {
