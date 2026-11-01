@@ -35,14 +35,16 @@
   - Neutral raw values for other attributes, without technical prefixes
 
 - **Multi-language Support**: German and English interfaces
-- **Color-coded Output**: Warning and critical indicators use both text and symbols; normal status cells remain empty
+- **Color-coded Output**: Warning and critical indicators use both text and symbols; other status cells show a subdued `—`
 - **Tabular Format**: Well-organized table display of SMART attributes
 - **Change Tracking**: Shows SMART value changes compared to the previous run
 - **Device Details**: Capacity, firmware and serial number
 
 ### Interpreting the results
 
-The SMART overall status is the drive's own assessment. Estimated remaining write endurance describes wear, not overall drive health. Individual error counters and threshold failures may need attention even when the overall status passes.
+The SMART overall status is the drive's own assessment and appears right-aligned in the final row inside each device table. Estimated remaining write endurance describes wear, not overall drive health. Individual error counters and threshold failures may need attention even when the overall status passes.
+
+In the Status column, `—` means no additional warning, not a health verdict or proof that a vendor value has been assessed. Missing data remains explicit in the value. The Change column continues to use `-` for unchanged values or an unavailable comparison.
 
 Zero measurements are hidden unless a health or threshold rule requires attention; tracked zeros are still saved for future comparisons. Positive measurements remain visible even when unchanged. Counter warnings require a change since the previous snapshot; without a baseline, no change warning is shown. Threshold-based endurance/spare warnings and critical health conditions remain active regardless of changes.
 

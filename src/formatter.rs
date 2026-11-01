@@ -57,7 +57,7 @@ impl TableFormatter {
                 .status_warning()
                 .yellow()
                 .to_string(),
-            _ => String::new(),
+            _ => "—".dimmed().to_string(),
         };
 
         let colored_value = match status {
@@ -79,7 +79,7 @@ impl TableFormatter {
 
     pub fn add_manufacturer_row(&mut self, name: &str, value: &str) {
         self.manufacturer_rows
-            .push([name.to_string(), value.to_string(), "-".to_string(), String::new()]);
+            .push([name.to_string(), value.to_string(), "-".to_string(), "—".dimmed().to_string()]);
     }
 
     pub fn print_table(self, device: &StorageDevice, json: &Value) {
@@ -118,8 +118,12 @@ impl TableFormatter {
             theme.insert_horizontal_line(manufacturer_start + 2, line);
         }
         let header_content = device_header(device, json, width - 4);
+        table.with(Panel::header(header_content));
+        let footer_row = table.count_rows();
+        theme.insert_horizontal_line(footer_row, line);
         table
-            .with(Panel::header(header_content))
+            .with(Panel::footer(Wrap::wrap(&smart_overall_status(json), width - 4, true)))
+            .with(Modify::new((footer_row, 0)).with(Alignment::right()))
             .with(theme)
             .with(BorderCorrection::span())
             .with(Width::list(widths.map(|width| width + 2)))
@@ -141,19 +145,7 @@ pub fn print_header(title: &str) {
 
 fn device_header(device: &StorageDevice, json: &Value, width: usize) -> String {
     let left = format!("{} ({})", device.device_path.green(), device.interface.cyan());
-    let passed = json["smart_status"]["passed"].as_bool();
-    let status = match passed {
-        Some(true) => L10N.status_ok(),
-        Some(false) => L10N.status_critical(),
-        None => L10N.unavailable(),
-    };
-    let status = format!("{}: {}", L10N.smart_status(), status);
-    let status = match passed {
-        Some(true) => status.green().to_string(),
-        Some(false) => status.red().bold().to_string(),
-        None => status,
-    };
-    let mut lines = vec![paired_lines(&left, &status, width)];
+    let mut lines = vec![paired_lines(&left, "", width)];
     let is_nvme = json["device"]["protocol"]
         .as_str()
         .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe");
@@ -214,6 +206,21 @@ fn device_header(device: &StorageDevice, json: &Value, width: usize) -> String {
     }
 
     lines.join("\n")
+}
+
+fn smart_overall_status(json: &Value) -> String {
+    let passed = json["smart_status"]["passed"].as_bool();
+    let status = match passed {
+        Some(true) => L10N.status_ok(),
+        Some(false) => L10N.status_critical(),
+        None => L10N.unavailable(),
+    };
+    let status = format!("{}: {}", L10N.smart_status(), status);
+    match passed {
+        Some(true) => status.green().to_string(),
+        Some(false) => status.red().bold().to_string(),
+        None => status,
+    }
 }
 
 fn pcie_link_text(current: &str, maximum: &str) -> ColoredString {
@@ -294,13 +301,14 @@ mod tests {
     }
 
     #[test]
-    fn only_warning_and_critical_status_cells_have_content() {
+    fn statuses_show_alerts_or_a_centered_dash_without_implying_ok() {
         let mut formatter = TableFormatter::new();
         for status in [None, Some("OK"), Some("NEUTRAL"), Some("INFORMATION"), Some("UNAVAILABLE")] {
             formatter.add_row("Measurement", "1", "-", status);
         }
         formatter.add_row("Warning", "1", "+1", Some("WARNUNG"));
         formatter.add_row("Critical", "1", "-", Some("KRITISCH"));
+        formatter.add_manufacturer_row("Vendor value", "7");
         let output = formatter.render(&device(), &json!({}), 90);
         let header = output
             .lines()
@@ -322,19 +330,22 @@ mod tests {
         );
         for row in output
             .lines()
-            .filter(|line| line.contains("Measurement"))
+            .filter(|line| line.contains("Measurement") || line.contains("Vendor value"))
         {
             assert_eq!(
                 row.split('│')
                     .nth(4)
                     .expect("status cell")
                     .trim(),
-                ""
+                "—"
             );
             let cells: Vec<_> = row.split('│').collect();
-            assert!(cells[1].starts_with(" Measurement"), "{row}");
-            assert!(cells[2].ends_with("1 "), "{row}");
+            assert!(cells[1].starts_with(" Measurement") || cells[1].starts_with(" Vendor value"), "{row}");
+            assert!(cells[2].ends_with("1 ") || cells[2].ends_with("7 "), "{row}");
             assert!(cells[3].ends_with("- "), "{row}");
+            let left_padding = cells[4].len() - cells[4].trim_start().len();
+            let right_padding = cells[4].len() - cells[4].trim_end().len();
+            assert!(left_padding > 1 && left_padding.abs_diff(right_padding) <= 1, "{row}");
         }
         assert!(
             output
@@ -385,7 +396,7 @@ mod tests {
             json!({"model_name":" ","sata_version":{"string":" "},"serial_number":"","firmware_version":" "}),
         ] {
             let header = device_header(&device(), &json, 86);
-            assert!(header.contains(L10N.unavailable()));
+            assert!(!header.contains(L10N.smart_status()));
             for label in [
                 L10N.device_model(),
                 L10N.capacity(),
@@ -406,6 +417,11 @@ mod tests {
             .last()
             .expect("bottom border");
         assert!(bottom.starts_with('╰') && bottom.ends_with('╯'), "{output}");
+        let footer = output
+            .lines()
+            .nth_back(1)
+            .expect("overall status row");
+        assert!(footer.contains(L10N.smart_status()) && footer.contains(L10N.unavailable()), "{output}");
     }
 
     #[test]
