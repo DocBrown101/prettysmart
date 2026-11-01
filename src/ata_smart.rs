@@ -4,7 +4,7 @@ use prettysmart::snapshot::DeltaFormat;
 use prettysmart::utils::convert_lba_to_tb;
 use serde_json::Value;
 
-pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
+pub(crate) fn add_metrics(json: &Value, metrics: &mut MetricContext<'_>) {
     let hours = json["power_on_time"]["hours"].as_u64();
     if let Some(hours) = hours {
         // The old key may contain undecoded, vendor-specific raw hours.
@@ -183,7 +183,7 @@ fn remaining_percent(json: &Value, attr: &Value) -> Option<u64> {
         (169, "Remaining_Lifetime_Perc") => model.starts_with("KINGSTON "),
         (245, "Percent_Life_Remaining") | (233, "Media_Wearout_Indicator") | (170 | 232, "Available_Reservd_Space") => intel,
         (231, "SSD_Life_Left") => family.contains("SandForce"),
-        (177, "Wear_Leveling_Count") => samsung_ssd(json),
+        (177, "Wear_Leveling_Count") => is_samsung_ssd(json),
         _ => false,
     };
     if known {
@@ -197,7 +197,7 @@ fn remaining_percent(json: &Value, attr: &Value) -> Option<u64> {
     }
 }
 
-fn samsung_ssd(json: &Value) -> bool {
+fn is_samsung_ssd(json: &Value) -> bool {
     json["model_name"]
         .as_str()
         .is_some_and(|model| {
@@ -220,7 +220,7 @@ fn data_multiplier(json: &Value, id: u64, name: &str) -> Option<u64> {
                 .as_str()
                 .is_some_and(|family| family.contains("Crucial") || family.contains("Micron"));
             // shortcut: LBA units are only verified for these families; add others with documented units.
-            if (samsung_ssd(json) && matches!(id, 241 | 242)) || (micron && id == 246 && name == "Total_LBAs_Written") {
+            if (is_samsung_ssd(json) && matches!(id, 241 | 242)) || (micron && id == 246 && name == "Total_LBAs_Written") {
                 Some(512)
             } else {
                 None

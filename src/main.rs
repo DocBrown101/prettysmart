@@ -39,7 +39,7 @@ fn main() {
         if index > 0 {
             println!();
         }
-        if !process_device(&device, &mut snapshot_store) {
+        if !display_device_report(&device, &mut snapshot_store) {
             query_failed = true;
         }
     }
@@ -53,7 +53,7 @@ fn main() {
     }
 }
 
-fn process_device(device: &StorageDevice, snapshot_store: &mut SnapshotStore) -> bool {
+fn display_device_report(device: &StorageDevice, snapshot_store: &mut SnapshotStore) -> bool {
     let output = match Command::new("smartctl")
         .args(["-i", "-H", "-A", "-j"])
         .args(device.all_parts.split_whitespace())
@@ -126,9 +126,9 @@ fn process_device(device: &StorageDevice, snapshot_store: &mut SnapshotStore) ->
     let mut metrics = MetricContext::new(&mut formatter, previous_metrics, &mut current_metrics);
 
     if is_nvme {
-        nvme_smart::process(&json, &mut metrics);
+        nvme_smart::add_metrics(&json, &mut metrics);
     } else {
-        ata_smart::process(&json, &mut metrics);
+        ata_smart::add_metrics(&json, &mut metrics);
     }
 
     formatter.print_table(device, &json);

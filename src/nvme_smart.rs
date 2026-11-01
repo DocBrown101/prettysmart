@@ -7,7 +7,7 @@ use serde_json::Value;
 const ENDURANCE_WARN: u64 = 70;
 const ENDURANCE_CRIT: u64 = 90;
 
-pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
+pub(crate) fn add_metrics(json: &Value, metrics: &mut MetricContext<'_>) {
     let health = &json["nvme_smart_health_information_log"];
 
     // Handle critical warning with bit decoding
