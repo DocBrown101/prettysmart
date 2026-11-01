@@ -52,6 +52,8 @@ For supported Intel profiles, attribute 245 (`Percent_Life_Remaining`) uses the 
 
 MiB, GiB and 32 MiB counters are converted using their recognized units. Generic LBA counters are converted only for verified Samsung SSD and Crucial/Micron profiles using 512-byte accounting units, independently of the device's logical sector size. Unverified LBA counters remain raw values.
 
+Attributes named `NAND_GB_Written_TLC` or `NAND_GB_Written_SLC` are displayed in TB with change tracking and a neutral status unless SMART reports a threshold failure, regardless of model or attribute ID. Conversion uses decimal GB according to the attribute names.
+
 The exit status is **1** if discovery or a main device query fails, data is missing, or a protocol is unsupported. Remaining devices are still processed after individual query failures. A completed report returns **0**, including reports showing drive health warnings; the exit status is not a disk-health verdict.
 
 ## Installation

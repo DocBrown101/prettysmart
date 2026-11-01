@@ -47,6 +47,8 @@ impl Localization {
         critical_warning_label => "⚠️ KRITISCHE WARNUNG", "⚠️ CRITICAL WARNING";
         data_read_label => "Daten gelesen", "Data read";
         data_written_label => "Daten geschrieben", "Data written";
+        nand_written_tlc => "NAND geschrieben (TLC)", "NAND written (TLC)";
+        nand_written_slc => "NAND geschrieben (SLC)", "NAND written (SLC)";
         device_model => "Gerätemodell", "Device Model";
         drive_health => "Geschätzte Rest-Schreibausdauer", "Estimated remaining write endurance";
         header_title => "Speichermedien-Diagnose", "Storage Media Diagnostics";

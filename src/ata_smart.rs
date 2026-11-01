@@ -115,13 +115,18 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             continue;
         }
         if let (Some(multiplier), Some(value)) = (data_multiplier(json, id, name), raw) {
+            let (title, status) = match name {
+                "NAND_GB_Written_TLC" => (L10N.nand_written_tlc(), Some("NEUTRAL")),
+                "NAND_GB_Written_SLC" => (L10N.nand_written_slc(), Some("NEUTRAL")),
+                _ => (label.as_str(), None),
+            };
             metrics.add_row(
                 &format!("sata.{}.{}.units_{}", id, name, multiplier),
-                &label,
+                title,
                 &convert_lba_to_tb(value, multiplier as f64),
                 value,
                 DeltaFormat::MonotonicTb { multiplier: multiplier as f64 },
-                failure,
+                failure.or(status),
             );
             continue;
         }
@@ -209,6 +214,7 @@ fn data_multiplier(json: &Value, id: u64, name: &str) -> Option<u64> {
             Some(1024 * 1024 * 1024)
         }
         "Host_Writes_MiB" | "Host_Reads_MiB" => Some(1024 * 1024),
+        "NAND_GB_Written_TLC" | "NAND_GB_Written_SLC" => Some(1_000_000_000),
         "Total_LBAs_Written" | "Total_LBAs_Read" => {
             let micron = json["model_family"]
                 .as_str()

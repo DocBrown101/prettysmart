@@ -296,6 +296,97 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
 }
 
 #[test]
+fn nand_writes_use_decimal_gb_and_stay_neutral() {
+    for model in ["WDC  WDS500G2B0A-00SM50", "Another SSD"] {
+        let mut data = ata(json!([
+            {"id":233,"name":"NAND_GB_Written_TLC","value":100,"thresh":0,"raw":{"value":0}},
+            {"id":234,"name":"NAND_GB_Written_SLC","value":100,"thresh":0,"raw":{"value":0}}
+        ]));
+        data["model_name"] = json!(model);
+        let device = Device::new(data.clone());
+        let zero = device.run();
+        assert!(zero.status.success());
+        assert!(!stdout(&zero).contains("NAND"));
+        data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6805);
+        data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15295);
+        device.health(data.clone(), 0);
+        for (locale, title) in [("C", "NAND written"), ("de_DE.UTF-8", "NAND geschrieben")] {
+            let output = device
+                .command()
+                .env("LC_ALL", locale)
+                .output()
+                .expect("run localized CLI");
+            assert!(output.status.success());
+            let text = stdout(&output);
+            for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
+                let label = format!("{title} ({kind})");
+                assert_eq!(current_value(&text, &label), value);
+                assert_eq!(
+                    row(&text, &label)
+                        .split('│')
+                        .nth(4)
+                        .expect("status column")
+                        .trim(),
+                    "-"
+                );
+            }
+        }
+        let snapshots = device.snapshots();
+        assert_eq!(snapshots["devices"]["TEST"][0]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"], 0);
+        assert_eq!(
+            snapshots["devices"]["TEST"][1]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"],
+            6805
+        );
+        assert_eq!(
+            snapshots["devices"]["TEST"][1]["metrics"]["sata.234.NAND_GB_Written_SLC.units_1000000000"],
+            15295
+        );
+        data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6806);
+        data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15297);
+        device.health(data, 0);
+        let changed = device.run();
+        assert!(changed.status.success());
+        let text = stdout(&changed);
+        assert!(row(&text, "NAND written (TLC)").contains("+1.00 GB"), "{text}");
+        assert!(row(&text, "NAND written (SLC)").contains("+2.00 GB"), "{text}");
+        assert!(!text.contains("WARNING") && !text.contains("CRITICAL"), "{text}");
+    }
+}
+
+#[test]
+fn nand_gb_writes_are_recognized_by_name_regardless_of_model_or_id() {
+    for (model, tlc_id, slc_id) in [
+        (Some("Test SSD"), 233, 234),
+        (Some("WDC WDS500G3B0A-00SM50"), 233, 234),
+        (Some("WDC WDS500G2B0A-00SM50"), 234, 233),
+        (None, 250, 251),
+    ] {
+        let mut data = ata(json!([
+            {"id":tlc_id,"name":"NAND_GB_Written_TLC","raw":{"value":6805}},
+            {"id":slc_id,"name":"NAND_GB_Written_SLC","raw":{"value":15295}}
+        ]));
+        data["model_name"] = json!(model);
+        let device = Device::new(data);
+        let output = device.run();
+        assert!(output.status.success());
+        let text = stdout(&output);
+        assert_eq!(current_value(&text, "NAND written (TLC)"), "6.80 TB");
+        assert_eq!(current_value(&text, "NAND written (SLC)"), "15.29 TB");
+        assert!(!text.contains("NAND_GB_Written"), "{text}");
+    }
+}
+
+#[test]
+fn nand_threshold_failures_remain_visible_and_critical_even_at_zero() {
+    let mut data = ata(json!([{"id":233,"name":"NAND_GB_Written_TLC","value":5,"thresh":10,"raw":{"value":0}}]));
+    data["model_name"] = json!("WDC  WDS500G2B0A-00SM50");
+    let device = Device::new(data);
+    let output = device.run();
+    assert!(output.status.success());
+    assert!(row(&stdout(&output), "NAND written (TLC)").contains("CRITICAL"));
+}
+
+#[test]
 fn recognized_remaining_endurance_uses_profile_specific_values() {
     for (model, family, attr, expected, status) in [
         (
