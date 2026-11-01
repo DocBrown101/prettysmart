@@ -109,6 +109,14 @@ fn row<'a>(output: &'a str, label: &str) -> &'a str {
         .unwrap_or_else(|| panic!("missing {label}: {output}"))
 }
 
+fn current_value<'a>(output: &'a str, label: &str) -> &'a str {
+    row(output, label)
+        .split('│')
+        .nth(2)
+        .expect("value column")
+        .trim()
+}
+
 #[test]
 fn read_failures_keep_history_and_continue_with_other_devices() {
     let good = ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":7}}]));
@@ -155,7 +163,8 @@ fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
         let text = stdout(&output);
         assert!(row(&text, "SMART overall status").contains("CRITICAL"));
         assert!(row(&text, "Threshold failed now").contains("CRITICAL"));
-        assert!(row(&text, "Threshold failed in the past").contains("WARNING"));
+        assert!(row(&text, "End-to-End_Error").contains("WARNING"));
+        assert!(!text.contains("Threshold failed in the past"));
         assert!(row(&text, "Reported uncorrectable errors").contains("CRITICAL"));
     }
     assert_eq!(
@@ -165,6 +174,69 @@ fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
             .len(),
         5
     );
+}
+
+#[test]
+fn ata_properties_and_values_are_compact_and_zero_raw_values_do_not_warn() {
+    let mut data = ata(json!([
+        {"id":1,"name":"Raw_Read_Error_Rate","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
+        {"id":10,"name":"Spin_Retry_Count","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
+        {"id":184,"name":"End-to-End_Error","value":99,"thresh":90,"when_failed":"past","raw":{"value":1}},
+        {"id":200,"name":"Unknown_Attribute","when_failed":"past"},
+        {"id":201,"name":"Vendor_Attribute_123","raw":{"value":0}},
+        {"id":233,"name":"Media_Wearout_Indicator","value":99,"when_failed":"past","raw":{"value":0}},
+        {"id":241,"name":"Host_Writes_32MiB","when_failed":"past","raw":{"value":0}}
+    ]));
+    data["model_name"] = json!("INTEL SSDSC2KB480G8");
+    let device = Device::new(data);
+    for (locale, warning, endurance) in [
+        ("C", "WARNING", "Estimated remaining write endurance"),
+        ("de_DE.UTF-8", "WARNUNG", "Geschätzte Rest-Schreibausdauer"),
+    ] {
+        let output = device
+            .command()
+            .env("LC_ALL", locale)
+            .output()
+            .expect("run localized CLI");
+        assert!(output.status.success());
+        let text = stdout(&output);
+        assert_eq!(current_value(&text, "Raw_Read_Error_Rate"), "0");
+        assert_eq!(current_value(&text, "Vendor_Attribute_"), "0");
+        assert_eq!(
+            row(&text, "Vendor_Attribute_")
+                .split('│')
+                .nth(4)
+                .expect("status column")
+                .trim(),
+            "-"
+        );
+        for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Vendor_Attribute_", endurance, "Host_Writes_MiB"] {
+            assert!(!row(&text, label).contains(warning), "{text}");
+        }
+        assert!(row(&text, "End-to-End_Error").contains(warning), "{text}");
+        assert!(row(&text, "Unknown_Attribute").contains(warning), "{text}");
+        assert!(!text.contains("Threshold failed in the past"));
+        assert!(!text.contains("Grenzwert früher verletzt"));
+        for line in text
+            .lines()
+            .filter(|line| line.matches('│').count() == 5)
+        {
+            let property = line
+                .split('│')
+                .nth(1)
+                .expect("property column");
+            assert!(
+                !property
+                    .chars()
+                    .any(|ch| ch.is_ascii_digit()),
+                "{property}"
+            );
+        }
+        assert_eq!(
+            device.snapshots()["devices"]["TEST"][0]["metrics"]["sata.241.Host_Writes_32MiB.units_33554432"],
+            0
+        );
+    }
 }
 
 #[test]
@@ -209,7 +281,7 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
     assert!(!row(&text, "Read_Retry_Cnt").contains('%'));
     assert!(row(&text, "NAND_GiB_Written").contains("1.10 TB"));
     assert!(row(&text, "Lifetime_Reads_GiB").contains("1.10 TB"));
-    assert!(row(&text, "Total_LBAs_Written").contains("Raw value"));
+    assert_eq!(current_value(&text, "Total_LBAs_Written"), "1000000000");
     assert!(text.contains("1000.00 GB"));
     assert!(text.contains("Firmware: FW1"));
     assert!(text.contains("Serial number: TEST"));
@@ -280,9 +352,9 @@ fn recognized_remaining_endurance_uses_profile_specific_values() {
     let output = device.run();
     assert!(output.status.success());
     let text = stdout(&output);
-    for name in ["Grown_Failing_Block_Ct", "SSD_Life_Left", "Media_Wearout_Indicator"] {
+    for (name, raw) in [("Grown_Failing_Block_Ct", "3"), ("SSD_Life_Left", "96"), ("Media_Wearout_Indicator", "7")] {
         assert!(!row(&text, name).contains('%'));
-        assert!(row(&text, name).contains("Raw value"));
+        assert_eq!(current_value(&text, name), raw);
     }
 }
 
@@ -299,7 +371,10 @@ fn intel_remaining_endurance_validates_raw_percentage_without_normalized_fallbac
             assert!(row(&text, "Estimated remaining write endurance").contains(&format!("{percent}%")), "{text}");
         } else {
             assert!(!text.contains("Estimated remaining write endurance"), "{text}");
-            assert!(row(&text, "Percent_Life_Remaining").contains("Normalized: 64"), "{text}");
+            assert_eq!(
+                current_value(&text, "Percent_Life_Remaining"),
+                if raw.is_null() { "Unavailable" } else { "101" }
+            );
         }
     }
 }
@@ -321,6 +396,46 @@ fn intel_error_counter_aliases_warn_and_keep_tracking_changes() {
     let snapshots = device.snapshots();
     assert_eq!(snapshots["devices"]["TEST"][1]["metrics"]["sata.pending_sectors"], 2);
     assert_eq!(snapshots["devices"]["TEST"][1]["metrics"]["sata.udma_crc_errors"], 3);
+}
+
+#[test]
+fn udma_crc_warnings_require_a_changed_positive_count() {
+    for name in ["UDMA_CRC_Error_Count", "CRC_Error_Count"] {
+        for (previous, current, warning) in [
+            (None, 3, false),
+            (Some(3), 3, false),
+            (Some(0), 3, true),
+            (Some(3), 5, true),
+            (Some(5), 3, true),
+            (Some(3), 0, false),
+        ] {
+            let device = Device::new(ata(json!([
+                {"id":199,"name":name,"value":100,"thresh":0,"when_failed":"past","raw":{"value":current}}
+            ])));
+            if let Some(previous) = previous {
+                device.seed(json!({"sata.udma_crc_errors":previous}));
+            }
+            let output = device.run();
+            assert!(output.status.success());
+            let text = stdout(&output);
+            assert_eq!(text.contains("WARNING"), warning, "{name}: {previous:?} -> {current}: {text}");
+            assert_eq!(current_value(&text, "UDMA CRC-err"), current.to_string());
+            let unchanged = device.run();
+            assert!(unchanged.status.success());
+            assert!(!stdout(&unchanged).contains("WARNING"));
+        }
+    }
+}
+
+#[test]
+fn unchanged_udma_crc_threshold_failures_remain_critical() {
+    let device = Device::new(ata(json!([
+        {"id":199,"name":"UDMA_CRC_Error_Count","value":5,"thresh":10,"raw":{"value":3}}
+    ])));
+    device.seed(json!({"sata.udma_crc_errors":3}));
+    let output = device.run();
+    assert!(output.status.success());
+    assert!(row(&stdout(&output), "UDMA CRC-err").contains("CRITICAL"));
 }
 
 #[test]

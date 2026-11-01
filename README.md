@@ -27,12 +27,12 @@
   - Reallocated sectors
   - Pending sectors
   - Offline uncorrectable sectors
-  - UDMA CRC errors
+  - UDMA CRC errors (warnings only when a positive count changes since the previous snapshot)
   - Spin retry count
   - Reported uncorrectable errors and current/past attribute threshold failures
   - Remaining endurance and spare capacity for verified attribute/model combinations
   - Total data read/written for recognized units
-  - Neutral raw and normalized values for other attributes
+  - Neutral raw values for other attributes, without technical prefixes
 
 - **Multi-language Support**: German and English interfaces
 - **Color-coded Output**: Easy-to-read status indicators with color coding for critical, warning, and normal states
@@ -44,9 +44,9 @@
 
 The SMART overall status is the drive's own assessment. Estimated remaining write endurance describes wear, not overall drive health. Individual error counters and threshold failures may need attention even when the overall status passes.
 
-ATA attribute IDs and normalized values are vendor-specific. Percentage conversion uses explicit profiles for supported Samsung, Crucial/Micron, Kingston, Intel/Solidigm and SandForce attributes. Other values retain their smartctl names and are shown without a health judgment, unless smartctl reports a threshold failure. Keep the smartmontools drive database up to date for correct attribute names and model families.
+ATA attribute IDs and normalized values are vendor-specific. Percentage conversion uses explicit profiles for supported Samsung, Crucial/Micron, Kingston, Intel/Solidigm and SandForce attributes. Property labels omit attribute IDs and digits from smartctl names. The table shows only the measurement; normalized values and thresholds are evaluated internally, not displayed. Other values are shown without a health judgment, unless smartctl reports a threshold failure. Past failures do not trigger warnings when the raw value is zero; current threshold failures remain critical. Keep the smartmontools drive database up to date for correct attribute names and model families.
 
-For supported Intel profiles, attribute 245 (`Percent_Life_Remaining`) uses the raw percentage, not the normalized value. Missing or out-of-range percentages remain neutral raw/normalized values.
+For supported Intel profiles, attribute 245 (`Percent_Life_Remaining`) uses the raw percentage, not the normalized value. Out-of-range percentages remain neutral raw values; missing measurements are shown as unavailable.
 
 MiB, GiB and 32 MiB counters are converted using their recognized units. Generic LBA counters are converted only for verified Samsung SSD and Crucial/Micron profiles using 512-byte accounting units, independently of the device's logical sector size. Unverified LBA counters remain raw values.
 

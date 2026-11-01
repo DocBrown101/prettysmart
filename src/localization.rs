@@ -96,11 +96,7 @@ impl Localization {
         serial_number_label => "Seriennummer", "Serial number";
         firmware => "Firmware", "Firmware";
         capacity => "Kapazität", "Capacity";
-        raw_value => "Rohwert", "Raw value";
-        normalized_value => "Normalisiert", "Normalized";
-        threshold => "Grenzwert", "Threshold";
         failed_now => "Grenzwert aktuell verletzt", "Threshold failed now";
-        failed_past => "Grenzwert früher verletzt", "Threshold failed in the past";
         reported_uncorrectable => "Gemeldete unkorrigierbare Fehler", "Reported uncorrectable errors";
     }
 

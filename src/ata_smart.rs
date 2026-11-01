@@ -26,13 +26,24 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             .as_str()
             .unwrap_or("Unknown_Attribute");
         let raw = attr["raw"]["value"].as_u64();
-        let failure = attribute_failure(attr);
-        let label = format!("{} ({})", name, id);
+        let crc_without_change = matches!((id, name), (199, "UDMA_CRC_Error_Count" | "CRC_Error_Count"))
+            && raw
+                .zip(metrics.previous_value("sata.udma_crc_errors"))
+                .is_none_or(|(current, previous)| current == previous);
+        let failure = attribute_failure(attr).filter(|&status| !crc_without_change || status == "KRITISCH");
+        let label: String = name
+            .chars()
+            .filter(|ch| !ch.is_ascii_digit())
+            .collect();
         if let Some(status) = failure {
-            let reason = if status == "KRITISCH" { L10N.failed_now() } else { L10N.failed_past() };
+            let title = if status == "KRITISCH" {
+                format!("{}: {}", label, L10N.failed_now())
+            } else {
+                label.clone()
+            };
             metrics
                 .formatter
-                .add_row(&format!("{}: {}", label, reason), &attribute_values(attr), "-", Some(status));
+                .add_row(&title, &attribute_values(attr), "-", Some(status));
         }
         if id == 9 && hours.is_some() {
             continue;
@@ -63,7 +74,11 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             _ => None,
         };
         if let (Some((key, title, alert, format)), Some(value)) = (count, raw) {
-            let status = if value > 0 && !alert.is_empty() { Some(alert) } else { failure };
+            let status = if value > 0 && !alert.is_empty() && !crc_without_change {
+                Some(alert)
+            } else {
+                failure
+            };
             metrics.add_row(
                 key,
                 title,
@@ -90,7 +105,7 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             };
             metrics.add_row(
                 &format!("sata.{}.{}.remaining_percent", id, name),
-                &format!("{} ({})", title, id),
+                title,
                 &format!("{}%", value),
                 value,
                 DeltaFormat::Percent,
@@ -124,7 +139,7 @@ fn attribute_failure(attr: &Value) -> Option<&'static str> {
     };
     if attr["when_failed"] == "now" || threshold_failed {
         Some("KRITISCH")
-    } else if attr["when_failed"] == "past" {
+    } else if attr["when_failed"] == "past" && attr["raw"]["value"].as_u64() != Some(0) {
         Some("WARNUNG")
     } else {
         None
@@ -132,7 +147,7 @@ fn attribute_failure(attr: &Value) -> Option<&'static str> {
 }
 
 fn attribute_values(attr: &Value) -> String {
-    let raw = attr["raw"]["string"]
+    attr["raw"]["string"]
         .as_str()
         .map(str::to_string)
         .or_else(|| {
@@ -140,14 +155,7 @@ fn attribute_values(attr: &Value) -> String {
                 .as_u64()
                 .map(|value| value.to_string())
         })
-        .unwrap_or_else(|| L10N.unavailable().to_string());
-    let mut value = format!("{}: {}", L10N.raw_value(), raw);
-    for (field, label) in [("value", L10N.normalized_value()), ("thresh", L10N.threshold())] {
-        if let Some(number) = attr[field].as_u64() {
-            value.push_str(&format!("; {}: {}", label, number));
-        }
-    }
-    value
+        .unwrap_or_else(|| L10N.unavailable().to_string())
 }
 
 fn remaining_percent(json: &Value, attr: &Value) -> Option<u64> {

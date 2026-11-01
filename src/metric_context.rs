@@ -21,10 +21,13 @@ impl<'a> MetricContext<'a> {
         }
     }
 
+    pub(crate) fn previous_value(&self, key: &str) -> Option<u64> {
+        self.previous_metrics
+            .and_then(|metrics| metrics.get(key).copied())
+    }
+
     pub(crate) fn add_row(&mut self, key: &str, name: &str, value: &str, current: u64, delta_format: DeltaFormat, status: Option<&str>) {
-        let previous = self
-            .previous_metrics
-            .and_then(|metrics| metrics.get(key).copied());
+        let previous = self.previous_value(key);
         let change = format_change(previous, current, delta_format);
 
         self.formatter
