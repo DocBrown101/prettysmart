@@ -618,6 +618,58 @@ fn capacity_shares_the_bottom_header_line_and_is_right_aligned() {
 }
 
 #[test]
+fn protocol_version_is_inline_with_the_model_and_uses_the_interface_color() {
+    for (protocol, version_field, version, english_label, german_label) in [
+        ("ATA", "sata_version", " SATA 3.3 ", "Device Model", "Gerätemodell"),
+        ("NVMe", "nvme_version", " 1.3 ", "Model Number", "Modellnummer"),
+    ] {
+        for (model, version) in [(Some("Test SSD"), Some(version)), (Some("Test SSD"), None), (None, Some(version))] {
+            let mut data = ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}]));
+            data["device"]["protocol"] = json!(protocol);
+            data["model_name"] = json!(model);
+            data[version_field]["string"] = json!(version);
+            if protocol == "NVMe" {
+                data["nvme_smart_health_information_log"] = json!({"power_on_hours":200});
+            }
+            let device = Device::new(data);
+            for (locale, label, unavailable) in [("C", english_label, "Unavailable"), ("de_DE.UTF-8", german_label, "Nicht verfügbar")] {
+                for color in [false, true] {
+                    let output = device
+                        .command()
+                        .env("LC_ALL", locale)
+                        .env("CLICOLOR_FORCE", if color { "1" } else { "0" })
+                        .output()
+                        .expect("run localized CLI");
+                    assert!(output.status.success());
+                    let text = stdout(&output);
+                    let model_label = format!("{label}: {}", model.unwrap_or(unavailable));
+                    let model_row = row(&text, &model_label);
+                    if let Some(version) = version {
+                        let suffix = match (protocol, color) {
+                            ("NVMe", true) => format!(" ( \x1b[36mNVMe {}\x1b[0m )", version.trim()),
+                            ("NVMe", false) => format!(" ( NVMe {} )", version.trim()),
+                            (_, true) => format!(" (\x1b[36m{}\x1b[0m)", version.trim()),
+                            (_, false) => format!(" ({})", version.trim()),
+                        };
+                        assert!(model_row.contains(&format!("{model_label}{suffix}")), "{text}");
+                        assert!(model_row.ends_with("1000.00 GB │"), "{text}");
+                    } else {
+                        assert!(!model_row.contains('('), "{text}");
+                    }
+                    if color {
+                        assert!(text.contains("(\x1b[36msat\x1b[0m)"), "{text}");
+                    }
+                    assert!(!text.contains("SATA-Version:"), "{text}");
+                    assert!(!text.contains("SATA Version:"), "{text}");
+                    assert!(!text.contains("NVMe-Version:"), "{text}");
+                    assert!(!text.contains("NVMe Version:"), "{text}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn locale_precedence_uses_first_nonempty_variable() {
     let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}])));
     for (all, messages, lang, expected) in [

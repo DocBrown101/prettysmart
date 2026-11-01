@@ -103,28 +103,38 @@ fn print_subheader(device: &StorageDevice, json: &Value, width: usize) -> String
             header_content.push_str(&format!("{}: {}\n", label, value.trim()));
         }
     }
-    if json["device"]["protocol"]
+    let is_nvme = json["device"]["protocol"]
         .as_str()
-        .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe")
-    {
-        if let Some(model) = json["model_name"].as_str() {
-            header_content.push_str(&format!("{}: {}\n", L10N.model_number(), model.trim()));
-        }
-        if let Some(nvme_version) = json["nvme_version"]["string"].as_str() {
-            header_content.push_str(&format!("{}: {}\n", L10N.nvme_version(), nvme_version.trim()));
-        }
-        if device.interface == "nvme"
-            && let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name)
-        {
-            header_content.push_str(&format!("{} {} (max: {})", L10N.transmission_mode(), current, maximum));
-        }
+        .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe");
+    let (model_label, version_field) = if is_nvme {
+        (L10N.model_number(), "nvme_version")
     } else {
-        if let Some(model) = json["model_name"].as_str() {
-            header_content.push_str(&format!("{}: {}\n", L10N.device_model(), model.trim()));
+        (L10N.device_model(), "sata_version")
+    };
+    let model = json["model_name"].as_str();
+    let version = json[version_field]["string"].as_str();
+    if model.is_some() || version.is_some() {
+        header_content.push_str(&format!(
+            "{}: {}",
+            model_label,
+            model
+                .unwrap_or_else(|| L10N.unavailable())
+                .trim()
+        ));
+        if let Some(version) = version {
+            if is_nvme {
+                header_content.push_str(&format!(" ( {} )", format!("NVMe {}", version.trim()).cyan()));
+            } else {
+                header_content.push_str(&format!(" ({})", version.trim().cyan()));
+            }
         }
-        if let Some(sata_version) = json["sata_version"]["string"].as_str() {
-            header_content.push_str(&format!("{}: {}\n", L10N.sata_version(), sata_version.trim()));
-        }
+        header_content.push('\n');
+    }
+    if is_nvme
+        && device.interface == "nvme"
+        && let Ok((current, maximum)) = get_nvme_pcie_info(&device.short_device_name)
+    {
+        header_content.push_str(&format!("{} {} (max: {})", L10N.transmission_mode(), current, maximum));
     }
 
     if let Some(bytes) = json["user_capacity"]["bytes"]
