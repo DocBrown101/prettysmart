@@ -1,2 +1,0 @@
-[alias]
-tests = "test --locked --target-dir target/tests"

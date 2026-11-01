@@ -67,6 +67,7 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
             .env("LC_ALL", "C")
             .env("COLUMNS", "90")
             .env("NO_COLOR", "1")
+            .env("CLICOLOR_FORCE", "0")
             .output()
             .expect("run prettysmart with mocked smartctl");
         let snapshots = fs::read(directory.join("prettysmart/snapshots.json")).expect("read saved snapshots");
@@ -96,7 +97,11 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
                 .find(|line| line.contains("Critical comp time"))
                 .expect("output contains critical temperature duration");
             assert!(critical.contains("2 min"), "{critical}");
-            assert!(metrics["sata.power_on_hours"].is_null());
+            assert!(
+                metrics
+                    .get("sata.power_on_time.hours")
+                    .is_none()
+            );
             if access_type != "nvme" {
                 assert!(!stdout.contains("Transmission mode:"), "{stdout}");
             }

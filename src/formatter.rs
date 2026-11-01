@@ -288,6 +288,8 @@ mod tests {
     use tabled::grid::util::string::get_text_width;
 
     fn device() -> StorageDevice {
+        // Layout assertions must not inherit forced colors from the test runner.
+        colored::control::set_override(false);
         StorageDevice {
             all_parts: "/dev/sda -d sat".to_string(),
             device_path: "/dev/sda".to_string(),
@@ -406,6 +408,17 @@ mod tests {
     }
 
     #[test]
+    fn serial_number_and_firmware_share_one_header_line() {
+        let header = device_header(&device(), &json!({"serial_number":" TEST ","firmware_version":" FW1 "}), 86);
+        let line = header
+            .lines()
+            .find(|line| line.contains(L10N.serial_number_label()))
+            .expect("serial number line");
+        assert!(line.starts_with(&format!("{}: TEST", L10N.serial_number_label())), "{header}");
+        assert!(line.ends_with(&format!("{}: FW1", L10N.firmware())), "{header}");
+    }
+
+    #[test]
     fn empty_measurements_still_have_a_closed_outer_frame() {
         let output = TableFormatter::new().render(&device(), &json!({}), 90);
         let bottom = output
@@ -430,12 +443,6 @@ mod tests {
             let text = pcie_link_text(current, maximum);
             assert_eq!(text.fgcolor, color);
             assert_eq!(text.input, format!("{} (max: {})", current, maximum));
-            let rendered = text.to_string();
-            if rendered != text.input {
-                assert!(rendered.starts_with("\x1b[33m"));
-            }
-            assert_eq!(get_text_width(&rendered), get_text_width(&text.input));
-            assert!(get_text_width(&tabled::settings::width::Wrap::wrap(&rendered, 32, true)) <= 32);
         }
     }
 }

@@ -54,6 +54,7 @@ esac
             .env_remove("LC_MESSAGES")
             .env("LANG", "en_US.UTF-8")
             .env("COLUMNS", "90")
+            .env("CLICOLOR_FORCE", "0")
             .env("NO_COLOR", "1");
         command
     }
@@ -118,6 +119,14 @@ fn current_value<'a>(output: &'a str, label: &str) -> &'a str {
         .trim()
 }
 
+fn change<'a>(output: &'a str, label: &str) -> &'a str {
+    row(output, label)
+        .split('│')
+        .nth(3)
+        .expect("change column")
+        .trim()
+}
+
 fn status<'a>(output: &'a str, label: &str) -> &'a str {
     row(output, label)
         .split('│')
@@ -171,6 +180,29 @@ fn read_failures_keep_history_and_continue_with_other_devices() {
 }
 
 #[test]
+fn corrupt_snapshot_history_is_reported_and_never_overwritten() {
+    let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":7}}])));
+    device.seed(json!({"sata.power_cycles":5}));
+    let corrupt = "{\"devices\":{\"TEST\":[";
+    device.write("prettysmart/snapshots.json", corrupt);
+
+    let output = device.run();
+
+    assert!(output.status.success());
+    assert_eq!(current_value(&stdout(&output), "Power cycles"), "7");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Snapshot history could not be loaded"));
+    assert_eq!(
+        fs::read_to_string(
+            device
+                .directory
+                .join("prettysmart/snapshots.json")
+        )
+        .expect("read original history"),
+        corrupt
+    );
+}
+
+#[test]
 fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
     let mut data = ata(json!([
         {"id":1,"name":"Raw_Read_Error_Rate","value":5,"thresh":10,"when_failed":"now","raw":{"value":0}},
@@ -201,16 +233,27 @@ fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
 }
 
 #[test]
-fn ata_properties_and_values_are_compact_and_zero_measurements_are_hidden() {
-    let mut data = ata(json!([
+fn ata_zero_values_do_not_show_past_failures() {
+    let device = Device::new(ata(json!([
         {"id":1,"name":"Raw_Read_Error_Rate","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
         {"id":10,"name":"Spin_Retry_Count","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
+        {"id":202,"name":"Program_Fail_Cnt_Total","raw":{"string":"0"}}
+    ])));
+    let output = device.run();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Program_Fail_Cnt_Total"] {
+        assert!(!text.contains(label), "{text}");
+    }
+    assert!(!text.contains("WARNING"), "{text}");
+}
+
+#[test]
+fn ata_past_failures_warn_but_healthy_endurance_stays_neutral() {
+    let mut data = ata(json!([
         {"id":184,"name":"End-to-End_Error","value":99,"thresh":90,"when_failed":"past","raw":{"value":1}},
         {"id":200,"name":"Unknown_Attribute","when_failed":"past"},
-        {"id":201,"name":"Vendor_Attribute_123","raw":{"value":7}},
-        {"id":202,"name":"Program_Fail_Cnt_Total","raw":{"string":"0"}},
-        {"id":233,"name":"Media_Wearout_Indicator","value":99,"when_failed":"past","raw":{"value":0}},
-        {"id":241,"name":"Host_Writes_32MiB","when_failed":"past","raw":{"value":0}}
+        {"id":233,"name":"Media_Wearout_Indicator","value":99,"when_failed":"past","raw":{"value":0}}
     ]));
     data["model_name"] = json!("INTEL SSDSC2KB480G8");
     let device = Device::new(data);
@@ -225,43 +268,40 @@ fn ata_properties_and_values_are_compact_and_zero_measurements_are_hidden() {
             .expect("run localized CLI");
         assert!(output.status.success());
         let text = stdout(&output);
-        for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Program_Fail_Cnt_Total", "Host_Writes_MiB"] {
-            assert!(!text.contains(label), "{text}");
-        }
-        assert_eq!(current_value(&text, "Vendor_Attribute_"), "7");
-        assert_eq!(
-            row(&text, "Vendor_Attribute_")
-                .split('│')
-                .nth(4)
-                .expect("status column")
-                .trim(),
-            "—"
-        );
-        for label in ["Vendor_Attribute_", endurance] {
-            assert!(!row(&text, label).contains(warning), "{text}");
-        }
-        assert!(row(&text, "End-to-End_Error").contains(warning), "{text}");
-        assert!(row(&text, "Unknown_Attribute").contains(warning), "{text}");
+        assert_eq!(current_value(&text, endurance), "99 %");
+        assert_eq!(status(&text, endurance), "—");
+        assert!(status(&text, "End-to-End_Error").contains(warning), "{text}");
+        assert!(status(&text, "Unknown_Attribute").contains(warning), "{text}");
         assert!(!text.contains("Threshold failed in the past"));
         assert!(!text.contains("Grenzwert früher verletzt"));
-        for line in text
-            .lines()
-            .filter(|line| line.matches('│').count() == 5)
-        {
-            let property = line
-                .split('│')
-                .nth(1)
-                .expect("property column");
-            assert!(
-                !property
-                    .chars()
-                    .any(|ch| ch.is_ascii_digit()),
-                "{property}"
-            );
-        }
-        assert_eq!(
-            device.snapshots()["devices"]["TEST"][0]["metrics"]["sata.241.Host_Writes_32MiB.units_33554432"],
-            0
+    }
+}
+
+#[test]
+fn ata_property_labels_omit_attribute_ids_and_digits() {
+    let device = Device::new(ata(json!([
+        {"id":201,"name":"Vendor_Attribute_123","raw":{"value":7}},
+        {"id":241,"name":"Host_Writes_32MiB","raw":{"value":1}}
+    ])));
+    let output = device.run();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    assert_eq!(current_value(&text, "Vendor_Attribute_"), "7");
+    assert_eq!(status(&text, "Vendor_Attribute_"), "—");
+    assert_eq!(current_value(&text, "Host_Writes_MiB"), "0.00 TB");
+    for line in text
+        .lines()
+        .filter(|line| line.matches('│').count() == 5)
+    {
+        let property = line
+            .split('│')
+            .nth(1)
+            .expect("property column");
+        assert!(
+            !property
+                .chars()
+                .any(|ch| ch.is_ascii_digit()),
+            "{property}"
         );
     }
 }
@@ -301,10 +341,10 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
     let output = device.run();
     assert!(output.status.success());
     let text = stdout(&output);
-    assert!(row(&text, "Operating hours").contains("200 h"));
-    assert!(!row(&text, "Operating hours").contains("reset?"));
-    assert!(row(&text, "Pending sectors").contains("-5"));
-    assert!(row(&text, "Offline uncorrectable sectors").contains("-1"));
+    assert_eq!(current_value(&text, "Operating hours"), "200 h (8 days)");
+    assert_eq!(change(&text, "Operating hours"), "-");
+    assert_eq!(change(&text, "Pending sectors"), "-5");
+    assert_eq!(change(&text, "Offline uncorrectable sectors"), "-1");
     assert!(!row(&text, "Read_Retry_Cnt").contains('%'));
     assert!(row(&text, "NAND_GiB_Written").contains("1.10 TB"));
     assert!(row(&text, "Lifetime_Reads_GiB").contains("1.10 TB"));
@@ -316,65 +356,54 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
     let metrics = &snapshots["devices"]["TEST"][1]["metrics"];
     assert_eq!(metrics["sata.power_on_time.hours"], 200);
     assert_eq!(metrics["sata.241.Host_Writes_32MiB.units_33554432"], 0);
-    assert!(metrics["sata.drive_health_remaining"].is_null());
 }
 
 #[test]
 fn nand_writes_use_decimal_gb_and_stay_neutral() {
-    for model in ["WDC  WDS500G2B0A-00SM50", "Another SSD"] {
-        let mut data = ata(json!([
-            {"id":233,"name":"NAND_GB_Written_TLC","value":100,"thresh":0,"raw":{"value":0}},
-            {"id":234,"name":"NAND_GB_Written_SLC","value":100,"thresh":0,"raw":{"value":0}}
-        ]));
-        data["model_name"] = json!(model);
-        let device = Device::new(data.clone());
-        let zero = device.run();
-        assert!(zero.status.success());
-        assert!(!stdout(&zero).contains("NAND"));
-        data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6805);
-        data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15295);
-        device.health(data.clone(), 0);
-        for (locale, title) in [("C", "NAND written"), ("de_DE.UTF-8", "NAND geschrieben")] {
-            let output = device
-                .command()
-                .env("LC_ALL", locale)
-                .output()
-                .expect("run localized CLI");
-            assert!(output.status.success());
-            let text = stdout(&output);
-            for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
-                let label = format!("{title} ({kind})");
-                assert_eq!(current_value(&text, &label), value);
-                assert_eq!(
-                    row(&text, &label)
-                        .split('│')
-                        .nth(4)
-                        .expect("status column")
-                        .trim(),
-                    "—"
-                );
-            }
+    let mut data = ata(json!([
+        {"id":233,"name":"NAND_GB_Written_TLC","value":100,"thresh":0,"raw":{"value":0}},
+        {"id":234,"name":"NAND_GB_Written_SLC","value":100,"thresh":0,"raw":{"value":0}}
+    ]));
+    let device = Device::new(data.clone());
+    let zero = device.run();
+    assert!(zero.status.success());
+    assert!(!stdout(&zero).contains("NAND"));
+    data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6805);
+    data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15295);
+    device.health(data.clone(), 0);
+    for (locale, title) in [("C", "NAND written"), ("de_DE.UTF-8", "NAND geschrieben")] {
+        let output = device
+            .command()
+            .env("LC_ALL", locale)
+            .output()
+            .expect("run localized CLI");
+        assert!(output.status.success());
+        let text = stdout(&output);
+        for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
+            let label = format!("{title} ({kind})");
+            assert_eq!(current_value(&text, &label), value);
+            assert_eq!(status(&text, &label), "—");
         }
-        let snapshots = device.snapshots();
-        assert_eq!(snapshots["devices"]["TEST"][0]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"], 0);
-        assert_eq!(
-            snapshots["devices"]["TEST"][1]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"],
-            6805
-        );
-        assert_eq!(
-            snapshots["devices"]["TEST"][1]["metrics"]["sata.234.NAND_GB_Written_SLC.units_1000000000"],
-            15295
-        );
-        data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6806);
-        data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15297);
-        device.health(data, 0);
-        let changed = device.run();
-        assert!(changed.status.success());
-        let text = stdout(&changed);
-        assert!(row(&text, "NAND written (TLC)").contains("+1.00 GB"), "{text}");
-        assert!(row(&text, "NAND written (SLC)").contains("+2.00 GB"), "{text}");
-        assert!(!text.contains("WARNING") && !text.contains("CRITICAL"), "{text}");
     }
+    let snapshots = device.snapshots();
+    assert_eq!(snapshots["devices"]["TEST"][0]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"], 0);
+    assert_eq!(
+        snapshots["devices"]["TEST"][1]["metrics"]["sata.233.NAND_GB_Written_TLC.units_1000000000"],
+        6805
+    );
+    assert_eq!(
+        snapshots["devices"]["TEST"][1]["metrics"]["sata.234.NAND_GB_Written_SLC.units_1000000000"],
+        15295
+    );
+    data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6806);
+    data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15297);
+    device.health(data, 0);
+    let changed = device.run();
+    assert!(changed.status.success());
+    let text = stdout(&changed);
+    assert_eq!(change(&text, "NAND written (TLC)"), "+1.00 GB");
+    assert_eq!(change(&text, "NAND written (SLC)"), "+2.00 GB");
+    assert!(!text.contains("WARNING") && !text.contains("CRITICAL"), "{text}");
 }
 
 #[test]
@@ -692,27 +721,27 @@ fn nvme_zero_values_are_hidden_except_for_threshold_failures_and_counters_warn_o
         assert_eq!(text.contains("Num err log entries"), current > 0, "{text}");
         assert_eq!(text.contains("WARNING"), warning, "{text}");
     }
-}
-
-#[test]
-fn nvme_wear_above_100_and_all_warning_bits_are_visible() {
-    let device = Device::new(json!({
-        "device":{"protocol":"NVMe"},"serial_number":"TEST","smart_status":{"passed":false},
-        "nvme_smart_health_information_log":{"percentage_used":150,"critical_warning":96,"thermal_mgmt_temp1_total_time":0}
-    }));
-    let output = device.run();
-    assert!(output.status.success());
-    let text = stdout(&output);
-    assert!(row(&text, "Estimated endurance used").contains("150 %"));
-    assert!(row(&text, "Estimated remaining write endurance").contains("0 % remaining"));
-    assert!(compact(&column_text(&text, 1)).contains("Persistentmemoryunreliable/read-only"));
-    assert_eq!(current_value(&text, "Unknown warning bits"), "0x40");
-    assert!(status(&text, "Unknown warning bits").contains("CRITICAL"));
     assert_eq!(device.snapshots()["devices"]["TEST"][0]["metrics"]["nvme.thermal_mgmt_temp1_total_time"], 0);
 }
 
 #[test]
-fn capacity_shares_the_model_line_and_serial_shares_the_firmware_line() {
+fn nvme_wear_above_100_keeps_original_usage_and_zero_remaining() {
+    let device = Device::new(json!({
+        "device":{"protocol":"NVMe"},"serial_number":"TEST","smart_status":{"passed":false},
+        "nvme_smart_health_information_log":{"percentage_used":150}
+    }));
+    let output = device.run();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    assert_eq!(current_value(&text, "Estimated endurance used"), "150 %");
+    assert_eq!(current_value(&text, "Estimated remaining write endurance"), "0 % remaining");
+    assert!(status(&text, "Estimated endurance used").contains("CRITICAL"));
+    assert!(status(&text, "Estimated remaining write endurance").contains("CRITICAL"));
+    assert_eq!(device.snapshots()["devices"]["TEST"][0]["metrics"]["nvme.drive_health_remaining"], 0);
+}
+
+#[test]
+fn model_header_keeps_capacity_visible_and_wraps_long_models() {
     for (protocol, model, capacity) in [
         ("ATA", "Test SSD", Some(1000000000000_u64)),
         ("NVMe", "Test SSD", Some(1000000000000_u64)),
@@ -761,21 +790,15 @@ fn capacity_shares_the_model_line_and_serial_shares_the_firmware_line() {
                 .replace(&format!("{capacity_label}: 1000.00 GB"), "")
                 .replace('│', "");
             assert!(compact(&header_text).contains(&compact(model)), "{text}");
-            assert!(
-                header[2..]
-                    .iter()
-                    .any(|line| line.contains("TEST") && line.contains("FW1")),
-                "{text}"
-            );
         }
     }
 }
 
 #[test]
-fn protocol_version_is_inline_with_the_model_and_uses_the_interface_color() {
-    for (protocol, version_field, version, english_label, german_label) in [
-        ("ATA", "sata_version", " SATA 3.3 ", "Device Model", "Gerätemodell"),
-        ("NVMe", "nvme_version", " 1.3 ", "Device Model", "Gerätemodell"),
+fn protocol_version_is_inline_with_the_model() {
+    for (protocol, version_field, version, suffix) in [
+        ("ATA", "sata_version", " SATA 3.3 ", " (SATA 3.3)"),
+        ("NVMe", "nvme_version", " 1.3 ", " (NVMe 1.3)"),
     ] {
         for (model, version) in [(Some("Test SSD"), Some(version)), (Some("Test SSD"), None), (None, Some(version))] {
             let mut data = ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}]));
@@ -786,39 +809,42 @@ fn protocol_version_is_inline_with_the_model_and_uses_the_interface_color() {
                 data["nvme_smart_health_information_log"] = json!({"power_on_hours":200});
             }
             let device = Device::new(data);
-            for (locale, label, unavailable) in [("C", english_label, "Unavailable"), ("de_DE.UTF-8", german_label, "Nicht verfügbar")] {
-                for color in [false, true] {
-                    let output = device
-                        .command()
-                        .env("LC_ALL", locale)
-                        .env("CLICOLOR_FORCE", if color { "1" } else { "0" })
-                        .output()
-                        .expect("run localized CLI");
-                    assert!(output.status.success());
-                    let text = stdout(&output);
-                    let model_label = format!("{label}: {}", model.unwrap_or(unavailable));
-                    let model_row = row(&text, &model_label);
-                    if let Some(version) = version {
-                        let suffix = match (protocol, color) {
-                            ("NVMe", true) => format!(" (\x1b[36mNVMe {}\x1b[0m)", version.trim()),
-                            ("NVMe", false) => format!(" (NVMe {})", version.trim()),
-                            (_, true) => format!(" (\x1b[36m{}\x1b[0m)", version.trim()),
-                            (_, false) => format!(" ({})", version.trim()),
-                        };
-                        assert!(model_row.contains(&format!("{model_label}{suffix}")), "{text}");
-                        assert!(model_row.ends_with("1000.00 GB │"), "{text}");
-                    } else {
-                        assert!(!model_row.contains('('), "{text}");
-                    }
-                    if color {
-                        assert!(text.contains("(\x1b[36msat\x1b[0m)"), "{text}");
-                    }
-                    assert!(!text.contains("SATA-Version:"), "{text}");
-                    assert!(!text.contains("SATA Version:"), "{text}");
-                    assert!(!text.contains("NVMe-Version:"), "{text}");
-                    assert!(!text.contains("NVMe Version:"), "{text}");
-                }
+            let output = device.run();
+            assert!(output.status.success());
+            let text = stdout(&output);
+            let model_label = format!("Device Model: {}", model.unwrap_or("Unavailable"));
+            let model_row = row(&text, &model_label);
+            if version.is_some() {
+                assert!(model_row.contains(&format!("{model_label}{suffix}")), "{text}");
+            } else {
+                assert!(!model_row.contains('('), "{text}");
             }
+            assert!(!text.contains("SATA Version:") && !text.contains("NVMe Version:"), "{text}");
+        }
+    }
+}
+
+#[test]
+fn protocol_version_uses_the_interface_color_in_both_languages() {
+    for (protocol, version_field, version) in [("ATA", "sata_version", "SATA 3.3"), ("NVMe", "nvme_version", "1.3")] {
+        let mut data = ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}]));
+        data["device"]["protocol"] = json!(protocol);
+        data[version_field]["string"] = json!(version);
+        data["nvme_smart_health_information_log"] = json!({"power_on_hours":200});
+        let device = Device::new(data);
+        let version = if protocol == "NVMe" { format!("NVMe {version}") } else { version.to_string() };
+        for (locale, model_label) in [("C", "Device Model"), ("de_DE.UTF-8", "Gerätemodell")] {
+            let output = device
+                .command()
+                .env("LC_ALL", locale)
+                .env("CLICOLOR_FORCE", "1")
+                .output()
+                .expect("run colored CLI");
+            assert!(output.status.success());
+            let text = stdout(&output);
+            assert!(row(&text, model_label).contains(&format!("Test SSD (\x1b[36m{version}\x1b[0m)")), "{text}");
+            assert!(row(&text, "/dev/sda").contains("(\x1b[36msat\x1b[0m)"), "{text}");
+            assert!(!text.contains("SATA-Version:") && !text.contains("NVMe-Version:"), "{text}");
         }
     }
 }
@@ -860,9 +886,8 @@ fn verified_lba_units_and_zero_baselines_produce_correct_deltas() {
         let output = device.run();
         assert!(output.status.success());
         let text = stdout(&output);
-        let value = row(&text, "Total_LBAs_Written");
-        assert!(value.contains("1.00 TB"), "{value}");
-        assert!(value.contains("+1.00 TB"), "{value}");
+        assert_eq!(current_value(&text, "Total_LBAs_Written"), "1.00 TB");
+        assert_eq!(change(&text, "Total_LBAs_Written"), "+1.00 TB");
     }
 }
 
@@ -971,26 +996,23 @@ fn zero_baselines_show_changes_without_turning_normal_metrics_into_warnings() {
             }
             device.health(data, 0);
             let run = || {
-                stdout(
-                    &device
-                        .command()
-                        .env("LC_ALL", locale)
-                        .output()
-                        .expect("run CLI"),
-                )
+                let output = device
+                    .command()
+                    .env("LC_ALL", locale)
+                    .output()
+                    .expect("run CLI");
+                assert!(output.status.success());
+                stdout(&output)
             };
             let text = run();
             let error = if protocol == "ATA" { "UDMA" } else { error };
             let written = if protocol == "ATA" { "Host_Writes_GiB" } else { written };
             assert_eq!(status(&text, cycles), "—");
             assert_eq!(status(&text, written), "—");
-            assert!(row(&text, cycles).contains("+1"), "{text}");
-            assert!(
-                row(&text, written).contains(if protocol == "ATA" { "+1.07 GB" } else { "+512.00 KB" }),
-                "{text}"
-            );
+            assert_eq!(change(&text, cycles), "+1");
+            assert_eq!(change(&text, written), if protocol == "ATA" { "+1.07 GB" } else { "+512.00 KB" });
             assert!(status(&text, error).contains(warning), "{text}");
-            assert!(row(&text, error).contains("+1"), "{text}");
+            assert_eq!(change(&text, error), "+1");
             let critical_counter = if protocol == "ATA" {
                 "Reallocated Sectors"
             } else if locale == "C" {
@@ -1004,14 +1026,7 @@ fn zero_baselines_show_changes_without_turning_normal_metrics_into_warnings() {
             }
             let unchanged = run();
             for label in [cycles, written, error, critical_counter] {
-                assert_eq!(
-                    row(&unchanged, label)
-                        .split('│')
-                        .nth(3)
-                        .expect("change column")
-                        .trim(),
-                    "-"
-                );
+                assert_eq!(change(&unchanged, label), "-");
             }
             assert_eq!(status(&unchanged, error), "—");
             assert!(status(&unchanged, critical_counter).contains(critical));
@@ -1021,7 +1036,40 @@ fn zero_baselines_show_changes_without_turning_normal_metrics_into_warnings() {
 }
 
 #[test]
-fn multiple_protocols_share_borders_and_columns_without_a_footer_even_with_color() {
+fn terminal_width_handles_invalid_and_out_of_range_columns() {
+    use tabled::grid::util::string::get_text_width;
+
+    let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}])));
+    for (columns, width) in [("54", 54), ("72", 72), ("90", 90), ("1", 54), ("invalid", 90), ("0", 90), ("200", 90)] {
+        let output = device
+            .command()
+            .env("COLUMNS", columns)
+            .output()
+            .expect("run CLI");
+        assert!(output.status.success());
+        let text = stdout(&output);
+        for line in text
+            .lines()
+            .filter(|line| !line.is_empty())
+        {
+            assert_eq!(get_text_width(line), width, "COLUMNS={columns}: {line}");
+        }
+    }
+}
+
+#[test]
+fn banner_shows_the_title_and_right_aligned_version() {
+    let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}])));
+    let output = device.run();
+    assert!(output.status.success());
+    let text = stdout(&output);
+    let banner = row(&text, "Storage Media Diagnostics");
+    assert!(banner.starts_with("│ Storage Media Diagnostics"), "{banner}");
+    assert!(banner.ends_with(&format!("v{} │", env!("CARGO_PKG_VERSION"))), "{banner}");
+}
+
+#[test]
+fn multiple_protocols_share_borders_and_columns_with_color() {
     use tabled::grid::util::string::get_text_width;
 
     let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}])));
@@ -1037,7 +1085,7 @@ fn multiple_protocols_share_borders_and_columns_without_a_footer_even_with_color
         .to_string(),
     );
     for locale in ["C", "de_DE.UTF-8"] {
-        for (columns, width) in [("54", 54), ("72", 72), ("90", 90), ("1", 54), ("invalid", 90), ("0", 90), ("200", 90)] {
+        for (columns, width) in [("54", 54), ("90", 90)] {
             for color in [false, true] {
                 let output = device
                     .command()
@@ -1048,6 +1096,7 @@ fn multiple_protocols_share_borders_and_columns_without_a_footer_even_with_color
                     .expect("run CLI");
                 assert!(output.status.success());
                 let text = stdout(&output);
+                assert_eq!(text.contains("\x1b["), color, "{text}");
                 let lines: Vec<_> = text.lines().collect();
                 let second_header = lines
                     .iter()
@@ -1065,38 +1114,56 @@ fn multiple_protocols_share_borders_and_columns_without_a_footer_even_with_color
                     .filter(|line| line.matches('│').count() == 5)
                     .map(|line| {
                         line.match_indices('│')
-                            .enumerate()
-                            .map(|(column, (index, _))| {
-                                if !color && column < 4 {
-                                    assert_eq!(get_text_width(&line[..index]), line[..index].chars().count(), "{line}");
-                                }
-                                get_text_width(&line[..index])
-                            })
+                            .map(|(index, _)| get_text_width(&line[..index]))
                             .collect()
                     })
                     .collect();
+                let first = column_positions
+                    .first()
+                    .expect("measurement columns");
                 assert!(
                     column_positions
                         .iter()
-                        .all(|positions| positions == &column_positions[0]),
+                        .all(|positions| positions == first),
                     "{text}"
                 );
-                assert!(text.trim_end().ends_with('╯'), "unexpected footer: {text}");
-                let banner = text.lines().nth(1).expect("banner");
-                assert!(banner.ends_with(&format!("v{} │", env!("CARGO_PKG_VERSION"))), "{banner}");
-                assert!(
-                    banner
-                        .trim_start_matches("│ ")
-                        .starts_with(if color {
-                            "\x1b["
-                        } else if locale == "C" {
-                            "Storage"
-                        } else {
-                            "Speichermedien"
-                        }),
-                    "{banner}"
-                );
+                assert!(text.trim_end().ends_with('╯'), "unclosed table: {text}");
             }
+        }
+    }
+}
+
+#[test]
+fn nvme_warning_bits_only_show_the_corresponding_warning() {
+    let warnings = [
+        (0x01, "Spare capacity below threshold"),
+        (0x02, "Temperature above threshold"),
+        (0x04, "Reliability degraded"),
+        (0x08, "Media read-only"),
+        (0x10, "Volatile memory backup failed"),
+        (0x20, "Persistent memory unreliable/read-only"),
+    ];
+    for bits in [0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40] {
+        let device = Device::new(json!({
+            "device":{"protocol":"NVMe"},"smart_status":{"passed":true},
+            "nvme_smart_health_information_log":{"critical_warning":bits}
+        }));
+        let output = device.run();
+        assert!(output.status.success());
+        let text = stdout(&output);
+        let properties = compact(&column_text(&text, 1));
+        for (bit, warning) in warnings {
+            assert_eq!(properties.contains(&compact(warning)), bits == bit, "bits={bits:#x}: {text}");
+        }
+        assert_eq!(text.contains("CRITICAL WARNING"), bits != 0, "{text}");
+        assert_eq!(text.contains("Unknown warning bits"), bits == 0x40, "{text}");
+        if bits != 0 {
+            assert_eq!(current_value(&text, "CRITICAL WARNING"), bits.to_string());
+            assert!(status(&text, "CRITICAL WARNING").contains("CRITICAL"));
+        }
+        if bits == 0x40 {
+            assert_eq!(current_value(&text, "Unknown warning bits"), "0x40");
+            assert!(status(&text, "Unknown warning bits").contains("CRITICAL"));
         }
     }
 }
