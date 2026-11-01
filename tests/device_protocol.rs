@@ -65,6 +65,7 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
             .env("XDG_STATE_HOME", &directory)
             .env("LANG", "en_US.UTF-8")
             .env("LC_ALL", "C")
+            .env("COLUMNS", "90")
             .env("NO_COLOR", "1")
             .output()
             .expect("run prettysmart with mocked smartctl");
@@ -77,7 +78,7 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
         let snapshots: Value = serde_json::from_slice(&snapshots).expect("saved snapshots contain valid JSON");
         let metrics = &snapshots["devices"]["TEST-SERIAL"][1]["metrics"];
         if is_nvme {
-            assert!(stdout.contains("Model Number: Test SSD ( NVMe 1.3 )"), "{stdout}");
+            assert!(stdout.contains("Model Number: Test SSD (NVMe 1.3)"), "{stdout}");
             assert!(!stdout.contains("NVMe Version:"), "{stdout}");
             assert!(stdout.contains("24.61 TB"), "{stdout}");
             assert!(stdout.contains("2929 h"), "{stdout}");

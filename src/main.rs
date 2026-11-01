@@ -35,7 +35,10 @@ fn main() {
     }
 
     let mut query_failed = false;
-    for device in devices {
+    for (index, device) in devices.into_iter().enumerate() {
+        if index > 0 {
+            println!();
+        }
         if !process_device(&device, &mut snapshot_store) {
             query_failed = true;
         }
@@ -90,7 +93,12 @@ fn process_device(device: &StorageDevice, snapshot_store: &mut SnapshotStore) ->
         });
     if !matches!(protocol, "NVMe" | "ATA") {
         eprintln!("{}: {} ({})", device.device_path, L10N.unsupported_protocol(), protocol);
-        formatter.add_row(L10N.smart_data(), L10N.unsupported_protocol(), "-", Some("UNAVAILABLE"));
+        formatter.add_row(
+            L10N.smart_data(),
+            &format!("{} ({})", L10N.unsupported_protocol(), L10N.unavailable()),
+            "-",
+            Some("UNAVAILABLE"),
+        );
         formatter.print_table(device, &json);
         return false;
     }

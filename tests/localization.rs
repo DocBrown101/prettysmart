@@ -1,6 +1,12 @@
 use prettysmart::localization::{Language, Localization};
 
 #[test]
+fn value_column_keeps_its_original_label_in_both_languages() {
+    assert_eq!(Localization::new(Language::DE).table_value(), "Aktueller Wert");
+    assert_eq!(Localization::new(Language::EN).table_value(), "Current Value");
+}
+
+#[test]
 fn operating_hours_shows_correct_days() {
     let loc = Localization::new(Language::EN);
     assert_eq!(loc.operating_hours(48), "48 h (2 days)");

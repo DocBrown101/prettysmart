@@ -1,5 +1,4 @@
 use crate::metric_context::MetricContext;
-use colored::Colorize;
 use prettysmart::localization::L10N;
 use prettysmart::snapshot::DeltaFormat;
 use prettysmart::utils::convert_lba_to_tb;
@@ -16,7 +15,9 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
         .as_u64()
         .filter(|&w| w != 0)
     {
-        println!("{}", L10N.critical_warning(warn).red().bold());
+        metrics
+            .formatter
+            .add_row(L10N.critical_warning_label(), &warn.to_string(), "-", Some("KRITISCH"));
 
         // Decode individual warning bits
         let mut warnings = Vec::new();
@@ -39,11 +40,15 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             warnings.push(L10N.nvme_warning_persistent_memory());
         }
         if warn & !0x3f != 0 {
-            println!("  → {}: {:#x}", L10N.unknown_warning_bits(), warn & !0x3f);
+            metrics
+                .formatter
+                .add_row(L10N.unknown_warning_bits(), &format!("{:#x}", warn & !0x3f), "-", Some("KRITISCH"));
         }
 
-        if !warnings.is_empty() {
-            println!("  → {}", warnings.join(", "));
+        for warning in warnings {
+            metrics
+                .formatter
+                .add_row(warning, "", "-", Some("KRITISCH"));
         }
     }
 
@@ -56,8 +61,8 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
         } else {
             None
         };
-        let name = format!("{} ({}%)", L10N.spare_blocks(), spare_thresh);
-        let value = format!("{}%", spare);
+        let name = format!("{} ({}: {} %)", L10N.spare_blocks(), L10N.threshold(), spare_thresh);
+        let value = format!("{} %", spare);
         metrics.add_row("nvme.available_spare", &name, &value, spare, DeltaFormat::Percent, status);
     }
 
@@ -83,7 +88,7 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
         metrics.add_row(
             "nvme.percentage_used",
             L10N.endurance_used(),
-            &format!("{}%", pct_used),
+            &format!("{} %", pct_used),
             pct_used,
             DeltaFormat::Percent,
             status,

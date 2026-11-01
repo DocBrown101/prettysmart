@@ -107,7 +107,7 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             metrics.add_row(
                 &format!("sata.{}.{}.remaining_percent", id, name),
                 title,
-                &format!("{}%", value),
+                &format!("{} %", value),
                 value,
                 DeltaFormat::Percent,
                 status,
@@ -135,7 +135,7 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             if value.trim() != "0" {
                 metrics
                     .formatter
-                    .add_row(&label, &value, "-", Some("NEUTRAL"));
+                    .add_manufacturer_row(&label, &value);
             }
         }
     }

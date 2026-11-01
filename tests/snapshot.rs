@@ -8,7 +8,7 @@ fn format_change_without_previous_value() {
 
 #[test]
 fn format_change_without_difference() {
-    assert_eq!(format_change(Some(10), 10, DeltaFormat::MonotonicCount), "±0");
+    assert_eq!(format_change(Some(10), 10, DeltaFormat::MonotonicCount), "-");
 }
 
 #[test]
@@ -20,13 +20,13 @@ fn format_change_for_monotonic_hours() {
 fn format_change_for_monotonic_seconds() {
     assert_eq!(format_change(Some(60), 120, DeltaFormat::MonotonicSeconds), "+60 s");
     assert_eq!(format_change(Some(120), 60, DeltaFormat::MonotonicSeconds), "reset?");
-    assert_eq!(format_change(Some(120), 120, DeltaFormat::MonotonicSeconds), "±0");
+    assert_eq!(format_change(Some(120), 120, DeltaFormat::MonotonicSeconds), "-");
     assert_eq!(format_change(None, 120, DeltaFormat::MonotonicSeconds), "-");
 }
 
 #[test]
 fn format_change_for_decreasing_percent() {
-    assert_eq!(format_change(Some(95), 94, DeltaFormat::Percent), "-1%");
+    assert_eq!(format_change(Some(95), 94, DeltaFormat::Percent), "-1 %");
 }
 
 #[test]

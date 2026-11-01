@@ -106,7 +106,7 @@ pub fn format_change(previous: Option<u64>, current: u64, format: DeltaFormat) -
 
     let diff = current as i128 - previous as i128;
     if diff == 0 {
-        return "±0".to_string();
+        return "-".to_string();
     }
 
     if diff < 0 && format.is_monotonic() {
@@ -121,7 +121,7 @@ pub fn format_change(previous: Option<u64>, current: u64, format: DeltaFormat) -
         DeltaFormat::Hours | DeltaFormat::MonotonicHours => format!("{}{} h", sign, absolute),
         DeltaFormat::Minutes | DeltaFormat::MonotonicMinutes => format!("{}{} min", sign, absolute),
         DeltaFormat::MonotonicSeconds => format!("{}{} s", sign, absolute),
-        DeltaFormat::Percent => format!("{}{}%", sign, absolute),
+        DeltaFormat::Percent => format!("{}{} %", sign, absolute),
         DeltaFormat::Tb { multiplier } | DeltaFormat::MonotonicTb { multiplier } => format_byte_change(sign, absolute, multiplier),
     }
 }

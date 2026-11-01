@@ -35,7 +35,7 @@
   - Neutral raw values for other attributes, without technical prefixes
 
 - **Multi-language Support**: German and English interfaces
-- **Color-coded Output**: Easy-to-read status indicators with color coding for critical, warning, and normal states
+- **Color-coded Output**: Warning and critical indicators use both text and symbols; normal status cells remain empty
 - **Tabular Format**: Well-organized table display of SMART attributes
 - **Change Tracking**: Shows SMART value changes compared to the previous run
 - **Device Details**: Capacity, firmware and serial number
@@ -106,19 +106,13 @@ For English:
 sudo LC_ALL=en_US.UTF-8 ./target/release/prettysmart
 ```
 
-## Output Example
-
-The tool displays a table with SMART attributes for each detected storage device, including:
-
-- Device model and interface type
-- Current health status
-- Value changes since the previous run
-- Warning indicators (if any)
-- Detailed metrics in a tabular format
-
 ## Snapshot History
 
 prettysmart stores SMART metric snapshots per drive serial number and displays the change compared to the previous run in the Change column.
+
+Changes are relative to the last run; `-` means unchanged
+or no comparison is available. Actual changes retain their sign and unit, and decreasing
+monotonic counters retain the `reset?` indication.
 
 Snapshots are stored in `$XDG_STATE_HOME/prettysmart/snapshots.json`, or `$HOME/.local/state/prettysmart/snapshots.json` when `XDG_STATE_HOME` is unset. With `sudo`, these usually belong to root.
 
