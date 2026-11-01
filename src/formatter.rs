@@ -3,6 +3,7 @@ use crate::utils::{self, StorageDevice};
 use colored::Colorize;
 use serde_json::Value;
 use tabled::builder::Builder;
+use tabled::grid::util::string::get_text_width;
 use tabled::settings::{Alignment, Modify, Panel, Style, Width, object::Columns, themes::BorderCorrection};
 use utils::get_nvme_pcie_info;
 
@@ -66,10 +67,10 @@ impl TableFormatter {
     }
 
     pub fn print_table(self, device: &StorageDevice, json: &Value) {
-        let header_content = print_subheader(device, json);
-        let table = self
-            .builder
-            .build()
+        let mut table = self.builder.build();
+        // Exclude the outer borders and the header cell's horizontal padding.
+        let header_content = print_subheader(device, json, table.total_width().max(TABLE_WIDTH) - 4);
+        let table = table
             .with(Panel::header(header_content))
             .with(BorderCorrection::span())
             .with(Style::rounded())
@@ -92,7 +93,7 @@ pub fn print_header(title: &str) {
     println!("{}", &title_str[start..]);
 }
 
-fn print_subheader(device: &StorageDevice, json: &Value) -> String {
+fn print_subheader(device: &StorageDevice, json: &Value, width: usize) -> String {
     let mut header_content = String::new();
     header_content.push_str(&device_header_line(device, json));
     header_content.push('\n');
@@ -102,13 +103,6 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
             header_content.push_str(&format!("{}: {}\n", label, value.trim()));
         }
     }
-    if let Some(bytes) = json["user_capacity"]["bytes"]
-        .as_u64()
-        .or_else(|| json["nvme_total_capacity"].as_u64())
-    {
-        header_content.push_str(&format!("{}: {:.2} GB\n", L10N.capacity(), bytes as f64 / 1e9));
-    }
-
     if json["device"]["protocol"]
         .as_str()
         .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe")
@@ -131,6 +125,24 @@ fn print_subheader(device: &StorageDevice, json: &Value) -> String {
         if let Some(sata_version) = json["sata_version"]["string"].as_str() {
             header_content.push_str(&format!("{}: {}\n", L10N.sata_version(), sata_version.trim()));
         }
+    }
+
+    if let Some(bytes) = json["user_capacity"]["bytes"]
+        .as_u64()
+        .or_else(|| json["nvme_total_capacity"].as_u64())
+    {
+        let capacity = format!("{}: {:.2} GB", L10N.capacity(), bytes as f64 / 1e9);
+        let width = width.max(get_text_width(&header_content));
+        let newline = if header_content.ends_with('\n') { "\n" } else { "" };
+        let header = header_content.trim_end_matches('\n');
+        let last_line = header
+            .rsplit('\n')
+            .next()
+            .unwrap_or_default();
+        let padding = width
+            .saturating_sub(get_text_width(last_line) + get_text_width(&capacity))
+            .max(1);
+        header_content = format!("{}{}{}{}", header, " ".repeat(padding), capacity, newline);
     }
 
     header_content

@@ -44,6 +44,8 @@
 
 The SMART overall status is the drive's own assessment. Estimated remaining write endurance describes wear, not overall drive health. Individual error counters and threshold failures may need attention even when the overall status passes.
 
+Zero measurements are hidden unless a health or threshold rule requires attention; tracked zeros are still saved for future comparisons. Positive measurements remain visible even when unchanged. Counter warnings require a change since the previous snapshot; without a baseline, no change warning is shown. Threshold-based endurance/spare warnings and critical health conditions remain active regardless of changes.
+
 ATA attribute IDs and normalized values are vendor-specific. Percentage conversion uses explicit profiles for supported Samsung, Crucial/Micron, Kingston, Intel/Solidigm and SandForce attributes. Property labels omit attribute IDs and digits from smartctl names. The table shows only the measurement; normalized values and thresholds are evaluated internally, not displayed. Other values are shown without a health judgment, unless smartctl reports a threshold failure. Past failures do not trigger warnings when the raw value is zero; current threshold failures remain critical. Keep the smartmontools drive database up to date for correct attribute names and model families.
 
 For supported Intel profiles, attribute 245 (`Percent_Life_Remaining`) uses the raw percentage, not the normalized value. Out-of-range percentages remain neutral raw values; missing measurements are shown as unavailable.

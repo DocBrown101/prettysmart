@@ -26,11 +26,16 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             .as_str()
             .unwrap_or("Unknown_Attribute");
         let raw = attr["raw"]["value"].as_u64();
-        let crc_without_change = matches!((id, name), (199, "UDMA_CRC_Error_Count" | "CRC_Error_Count"))
-            && raw
-                .zip(metrics.previous_value("sata.udma_crc_errors"))
-                .is_none_or(|(current, previous)| current == previous);
-        let failure = attribute_failure(attr).filter(|&status| !crc_without_change || status == "KRITISCH");
+        let warning_key = match (id, name) {
+            (199, "UDMA_CRC_Error_Count" | "CRC_Error_Count") => Some("sata.udma_crc_errors"),
+            (10, "Spin_Retry_Count") => Some("sata.spin_retry_count"),
+            _ => None,
+        };
+        let counter_without_change = warning_key.is_some_and(|key| {
+            raw.zip(metrics.previous_value(key))
+                .is_none_or(|(current, previous)| current == previous)
+        });
+        let failure = attribute_failure(attr).filter(|&status| !counter_without_change || status == "KRITISCH");
         let label: String = name
             .chars()
             .filter(|ch| !ch.is_ascii_digit())
@@ -74,11 +79,7 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             _ => None,
         };
         if let (Some((key, title, alert, format)), Some(value)) = (count, raw) {
-            let status = if value > 0 && !alert.is_empty() && !crc_without_change {
-                Some(alert)
-            } else {
-                failure
-            };
+            let status = if value > 0 && !alert.is_empty() { Some(alert) } else { failure };
             metrics.add_row(
                 key,
                 title,
@@ -124,10 +125,13 @@ pub(crate) fn process(json: &Value, metrics: &mut MetricContext<'_>) {
             );
             continue;
         }
-        if failure.is_none() {
-            metrics
-                .formatter
-                .add_row(&label, &attribute_values(attr), "-", Some("NEUTRAL"));
+        if failure.is_none() && raw != Some(0) {
+            let value = attribute_values(attr);
+            if value.trim() != "0" {
+                metrics
+                    .formatter
+                    .add_row(&label, &value, "-", Some("NEUTRAL"));
+            }
         }
     }
 }

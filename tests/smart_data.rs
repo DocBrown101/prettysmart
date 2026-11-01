@@ -177,13 +177,14 @@ fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
 }
 
 #[test]
-fn ata_properties_and_values_are_compact_and_zero_raw_values_do_not_warn() {
+fn ata_properties_and_values_are_compact_and_zero_measurements_are_hidden() {
     let mut data = ata(json!([
         {"id":1,"name":"Raw_Read_Error_Rate","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
         {"id":10,"name":"Spin_Retry_Count","value":100,"thresh":10,"when_failed":"past","raw":{"value":0}},
         {"id":184,"name":"End-to-End_Error","value":99,"thresh":90,"when_failed":"past","raw":{"value":1}},
         {"id":200,"name":"Unknown_Attribute","when_failed":"past"},
-        {"id":201,"name":"Vendor_Attribute_123","raw":{"value":0}},
+        {"id":201,"name":"Vendor_Attribute_123","raw":{"value":7}},
+        {"id":202,"name":"Program_Fail_Cnt_Total","raw":{"string":"0"}},
         {"id":233,"name":"Media_Wearout_Indicator","value":99,"when_failed":"past","raw":{"value":0}},
         {"id":241,"name":"Host_Writes_32MiB","when_failed":"past","raw":{"value":0}}
     ]));
@@ -200,8 +201,10 @@ fn ata_properties_and_values_are_compact_and_zero_raw_values_do_not_warn() {
             .expect("run localized CLI");
         assert!(output.status.success());
         let text = stdout(&output);
-        assert_eq!(current_value(&text, "Raw_Read_Error_Rate"), "0");
-        assert_eq!(current_value(&text, "Vendor_Attribute_"), "0");
+        for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Program_Fail_Cnt_Total", "Host_Writes_MiB"] {
+            assert!(!text.contains(label), "{text}");
+        }
+        assert_eq!(current_value(&text, "Vendor_Attribute_"), "7");
         assert_eq!(
             row(&text, "Vendor_Attribute_")
                 .split('│')
@@ -210,7 +213,7 @@ fn ata_properties_and_values_are_compact_and_zero_raw_values_do_not_warn() {
                 .trim(),
             "-"
         );
-        for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Vendor_Attribute_", endurance, "Host_Writes_MiB"] {
+        for label in ["Vendor_Attribute_", endurance] {
             assert!(!row(&text, label).contains(warning), "{text}");
         }
         assert!(row(&text, "End-to-End_Error").contains(warning), "{text}");
@@ -262,8 +265,8 @@ fn malformed_missing_and_unsupported_data_are_not_successful() {
 fn sata_names_units_and_decreasing_counts_are_respected() {
     let device = Device::new(ata(json!([
         {"id":9,"name":"Power_On_Seconds","raw":{"value":720000}},
-        {"id":197,"name":"Current_Pending_Sector","raw":{"value":0}},
-        {"id":198,"name":"Offline_Uncorrectable","raw":{"value":0}},
+        {"id":197,"name":"Current_Pending_Sector","raw":{"value":3}},
+        {"id":198,"name":"Offline_Uncorrectable","raw":{"value":1}},
         {"id":177,"name":"Read_Retry_Cnt","value":200,"raw":{"value":8}},
         {"id":233,"name":"NAND_GiB_Written","value":100,"raw":{"value":1024}},
         {"id":241,"name":"Host_Writes_32MiB","raw":{"value":0}},
@@ -276,8 +279,8 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
     let text = stdout(&output);
     assert!(row(&text, "Operating hours").contains("200 h"));
     assert!(!row(&text, "Operating hours").contains("reset?"));
-    assert!(row(&text, "Pending sectors").contains("-8"));
-    assert!(row(&text, "Offline uncorrectable sectors").contains("-2"));
+    assert!(row(&text, "Pending sectors").contains("-5"));
+    assert!(row(&text, "Offline uncorrectable sectors").contains("-1"));
     assert!(!row(&text, "Read_Retry_Cnt").contains('%'));
     assert!(row(&text, "NAND_GiB_Written").contains("1.10 TB"));
     assert!(row(&text, "Lifetime_Reads_GiB").contains("1.10 TB"));
@@ -343,6 +346,9 @@ fn recognized_remaining_endurance_uses_profile_specific_values() {
                 .expect("attribute name")
         );
         assert_eq!(snapshots["devices"]["TEST"][0]["metrics"][key], expected);
+        let unchanged = device.run();
+        assert!(unchanged.status.success());
+        assert!(row(&stdout(&unchanged), "Estimated remaining write endurance").contains(status));
     }
     let device = Device::new(ata(json!([
         {"id":170,"name":"Grown_Failing_Block_Ct","value":100,"raw":{"value":3}},
@@ -399,9 +405,14 @@ fn intel_error_counter_aliases_warn_and_keep_tracking_changes() {
 }
 
 #[test]
-fn udma_crc_warnings_require_a_changed_positive_count() {
-    for name in ["UDMA_CRC_Error_Count", "CRC_Error_Count"] {
+fn ata_counter_warnings_require_a_changed_positive_count() {
+    for (id, name, key, label) in [
+        (199, "UDMA_CRC_Error_Count", "sata.udma_crc_errors", "UDMA CRC-err"),
+        (199, "CRC_Error_Count", "sata.udma_crc_errors", "UDMA CRC-err"),
+        (10, "Spin_Retry_Count", "sata.spin_retry_count", "Spin Retry Count"),
+    ] {
         for (previous, current, warning) in [
+            (None, 0, false),
             (None, 3, false),
             (Some(3), 3, false),
             (Some(0), 3, true),
@@ -410,19 +421,85 @@ fn udma_crc_warnings_require_a_changed_positive_count() {
             (Some(3), 0, false),
         ] {
             let device = Device::new(ata(json!([
-                {"id":199,"name":name,"value":100,"thresh":0,"when_failed":"past","raw":{"value":current}}
+                {"id":id,"name":name,"value":100,"thresh":0,"when_failed":"past","raw":{"value":current}}
             ])));
             if let Some(previous) = previous {
-                device.seed(json!({"sata.udma_crc_errors":previous}));
+                device.seed(json!({key:previous}));
             }
             let output = device.run();
             assert!(output.status.success());
             let text = stdout(&output);
             assert_eq!(text.contains("WARNING"), warning, "{name}: {previous:?} -> {current}: {text}");
-            assert_eq!(current_value(&text, "UDMA CRC-err"), current.to_string());
+            if current == 0 {
+                assert!(!text.contains(label), "{text}");
+            } else {
+                assert_eq!(current_value(&text, label), current.to_string());
+            }
             let unchanged = device.run();
             assert!(unchanged.status.success());
             assert!(!stdout(&unchanged).contains("WARNING"));
+        }
+    }
+}
+
+#[test]
+fn hidden_ata_zero_values_stay_in_history_and_positive_values_stay_visible() {
+    let mut data = ata(json!([
+        {"id":5,"name":"Reallocated_Sector_Ct","raw":{"value":0}},
+        {"id":12,"name":"Power_Cycle_Count","raw":{"value":0}},
+        {"id":187,"name":"Reported_Uncorrect","raw":{"value":0}},
+        {"id":197,"name":"Current_Pending_Sector","raw":{"value":0}},
+        {"id":198,"name":"Offline_Uncorrectable","raw":{"value":0}},
+        {"id":199,"name":"UDMA_CRC_Error_Count","raw":{"value":0}},
+        {"id":200,"name":"Used_Rsvd_Blk_Cnt_Tot","raw":{"value":0}},
+        {"id":241,"name":"Host_Writes_GiB","raw":{"value":0}}
+    ]));
+    data["power_on_time"]["hours"] = json!(0);
+    let device = Device::new(data.clone());
+    for current in [0, 2, 2, 0, 1] {
+        for attr in data["ata_smart_attributes"]["table"]
+            .as_array_mut()
+            .expect("attributes")
+        {
+            attr["raw"]["value"] = json!(current);
+        }
+        device.health(data.clone(), 0);
+        let output = device.run();
+        assert!(output.status.success());
+        let text = stdout(&output);
+        assert!(!text.contains("Operating hours"));
+        for label in [
+            "Reallocated Sectors",
+            "Power cycles",
+            "Reported uncorrectable errors",
+            "Pending sectors",
+            "Offline uncorrectable sectors",
+            "UDMA CRC-err",
+            "Used_Rsvd_Blk_Cnt_Tot",
+            "Host_Writes_GiB",
+        ] {
+            assert_eq!(text.contains(label), current > 0, "{label}: {text}");
+        }
+        let snapshots = device.snapshots();
+        let metrics = &snapshots["devices"]["TEST"]
+            .as_array()
+            .expect("snapshots")
+            .last()
+            .expect("latest snapshot")["metrics"];
+        for key in [
+            "sata.reallocated_sectors",
+            "sata.power_cycles",
+            "sata.reported_uncorrectable",
+            "sata.pending_sectors",
+            "sata.offline_uncorrectable_sectors",
+            "sata.udma_crc_errors",
+            "sata.241.Host_Writes_GiB.units_1073741824",
+        ] {
+            assert_eq!(metrics[key], current);
+        }
+        assert_eq!(metrics["sata.power_on_time.hours"], 0);
+        if current == 1 {
+            assert!(row(&text, "UDMA CRC-err").contains("+1"), "{text}");
         }
     }
 }
@@ -439,6 +516,40 @@ fn unchanged_udma_crc_threshold_failures_remain_critical() {
 }
 
 #[test]
+fn nvme_zero_values_are_hidden_except_for_threshold_failures_and_counters_warn_on_change() {
+    let mut data = json!({
+        "device":{"protocol":"NVMe"},"serial_number":"TEST","smart_status":{"passed":true},
+        "nvme_smart_health_information_log":{
+            "available_spare":0,"available_spare_threshold":10,"percentage_used":100,
+            "power_on_hours":0,"power_cycles":0,"data_units_written":0,"media_errors":0,
+            "num_err_log_entries":0,"critical_comp_time":0,"thermal_mgmt_temp1_total_time":0
+        }
+    });
+    let device = Device::new(data.clone());
+    for (current, warning) in [(0, false), (3, true), (3, false)] {
+        data["nvme_smart_health_information_log"]["num_err_log_entries"] = json!(current);
+        device.health(data.clone(), 0);
+        let output = device.run();
+        assert!(output.status.success());
+        let text = stdout(&output);
+        assert!(row(&text, "Available Spare Blocks").contains("CRITICAL"));
+        assert!(row(&text, "Estimated remaining write endurance").contains("CRITICAL"));
+        for label in [
+            "Operating hours",
+            "Power cycles",
+            "Data written",
+            "Media Errors",
+            "Critical comp time",
+            "Overall throttled",
+        ] {
+            assert!(!text.contains(label), "{text}");
+        }
+        assert_eq!(text.contains("Num err log entries"), current > 0, "{text}");
+        assert_eq!(text.contains("WARNING"), warning, "{text}");
+    }
+}
+
+#[test]
 fn nvme_wear_above_100_and_all_warning_bits_are_visible() {
     let device = Device::new(json!({
         "device":{"protocol":"NVMe"},"serial_number":"TEST","smart_status":{"passed":false},
@@ -452,6 +563,58 @@ fn nvme_wear_above_100_and_all_warning_bits_are_visible() {
     assert!(text.contains("Persistent memory unreliable/read-only"));
     assert!(text.contains("Unknown warning bits: 0x40"));
     assert_eq!(device.snapshots()["devices"]["TEST"][0]["metrics"]["nvme.thermal_mgmt_temp1_total_time"], 0);
+}
+
+#[test]
+fn capacity_shares_the_bottom_header_line_and_is_right_aligned() {
+    for (protocol, model, capacity) in [
+        ("ATA", "Test SSD", Some(1000000000000_u64)),
+        ("NVMe", "Test SSD", Some(1000000000000_u64)),
+        (
+            "ATA",
+            "A very long device model name that must not collide with the capacity at the right edge",
+            Some(1000000000000_u64),
+        ),
+        ("ATA", "Test SSD", None),
+    ] {
+        let mut data = ata(json!([{"id":200,"name":"A_very_long_vendor_attribute_name_to_make_the_table_wider_than_the_default_width","raw":{"value":1}}]));
+        data["device"]["protocol"] = json!(protocol);
+        data["model_name"] = json!(model);
+        data["user_capacity"]["bytes"] = json!(capacity);
+        if protocol == "NVMe" {
+            data["nvme_smart_health_information_log"] = json!({"power_on_hours":200});
+        }
+        let device = Device::new(data);
+        for (locale, capacity_label, model_label) in [
+            ("C", "Capacity", if protocol == "NVMe" { "Model Number" } else { "Device Model" }),
+            ("de_DE.UTF-8", "Kapazität", if protocol == "NVMe" { "Modellnummer" } else { "Gerätemodell" }),
+        ] {
+            let output = device
+                .command()
+                .env("LC_ALL", locale)
+                .output()
+                .expect("run localized CLI");
+            assert!(output.status.success());
+            let text = stdout(&output);
+            let bottom = row(&text, &format!("{model_label}: {model}"));
+            if capacity.is_some() {
+                assert!(bottom.ends_with(&format!("{capacity_label}: 1000.00 GB │")), "{text}");
+                assert_eq!(
+                    text.matches(&format!("{capacity_label}:"))
+                        .count(),
+                    1
+                );
+            } else {
+                assert!(!text.contains(&format!("{capacity_label}:")), "{text}");
+            }
+            let header: Vec<_> = text
+                .lines()
+                .skip_while(|line| !line.starts_with('│'))
+                .take_while(|line| line.starts_with('│'))
+                .collect();
+            assert_eq!(header.len(), 5, "{text}");
+        }
+    }
 }
 
 #[test]
