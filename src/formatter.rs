@@ -63,7 +63,7 @@ impl TableFormatter {
         let colored_value = match status {
             Some("KRITISCH") => value.red().bold().to_string(),
             Some("WARNUNG") => value.yellow().to_string(),
-            Some("NEUTRAL" | "UNAVAILABLE" | "INFORMATION") => value.to_string(),
+            Some("UNAVAILABLE" | "INFORMATION") => value.to_string(),
             _ => value.green().to_string(),
         };
 
@@ -149,11 +149,7 @@ fn device_header(device: &StorageDevice, json: &Value, width: usize) -> String {
     let is_nvme = json["device"]["protocol"]
         .as_str()
         .map_or_else(|| device.is_nvme(), |protocol| protocol == "NVMe");
-    let (model_label, version_field) = if is_nvme {
-        (L10N.model_number(), "nvme_version")
-    } else {
-        (L10N.device_model(), "sata_version")
-    };
+    let version_field = if is_nvme { "nvme_version" } else { "sata_version" };
     let model = json["model_name"]
         .as_str()
         .map(str::trim)
@@ -164,7 +160,7 @@ fn device_header(device: &StorageDevice, json: &Value, width: usize) -> String {
         .filter(|value| !value.is_empty());
     let mut model_text = String::new();
     if model.is_some() || version.is_some() {
-        model_text.push_str(&format!("{}: {}", model_label, model.unwrap_or_else(|| L10N.unavailable())));
+        model_text.push_str(&format!("{}: {}", L10N.device_model(), model.unwrap_or_else(|| L10N.unavailable())));
         if let Some(version) = version {
             if is_nvme {
                 model_text.push_str(&format!(" ({})", format!("NVMe {}", version).cyan()));

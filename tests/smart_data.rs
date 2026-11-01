@@ -378,6 +378,32 @@ fn nand_writes_use_decimal_gb_and_stay_neutral() {
 }
 
 #[test]
+fn neutral_nand_values_are_green_but_vendor_raw_values_are_not() {
+    let device = Device::new(ata(json!([
+        {"id":233,"name":"NAND_GB_Written_TLC","raw":{"value":6805}},
+        {"id":234,"name":"NAND_GB_Written_SLC","raw":{"value":15295}},
+        {"id":200,"name":"Vendor_Field","raw":{"value":7}}
+    ])));
+    for (locale, title) in [("C", "NAND written"), ("de_DE.UTF-8", "NAND geschrieben")] {
+        let output = device
+            .command()
+            .env("LC_ALL", locale)
+            .env("CLICOLOR_FORCE", "1")
+            .output()
+            .expect("run colored CLI");
+        assert!(output.status.success());
+        let text = stdout(&output);
+        for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
+            let label = format!("{title} ({kind})");
+            assert_eq!(current_value(&text, &label), format!("\x1b[32m{value}\x1b[0m"));
+            assert!(status(&text, &label).contains('—'));
+            assert!(!status(&text, &label).contains("\x1b[32m"));
+        }
+        assert_eq!(current_value(&text, "Vendor_Field"), "7");
+    }
+}
+
+#[test]
 fn nand_gb_writes_are_recognized_by_name_regardless_of_model_or_id() {
     for (model, tlc_id, slc_id) in [
         (Some("Test SSD"), 233, 234),
@@ -705,10 +731,7 @@ fn capacity_shares_the_model_line_and_serial_shares_the_firmware_line() {
             data["nvme_smart_health_information_log"] = json!({"power_on_hours":200});
         }
         let device = Device::new(data);
-        for (locale, capacity_label, model_label) in [
-            ("C", "Capacity", if protocol == "NVMe" { "Model Number" } else { "Device Model" }),
-            ("de_DE.UTF-8", "Kapazität", if protocol == "NVMe" { "Modellnummer" } else { "Gerätemodell" }),
-        ] {
+        for (locale, capacity_label, model_label) in [("C", "Capacity", "Device Model"), ("de_DE.UTF-8", "Kapazität", "Gerätemodell")] {
             let output = device
                 .command()
                 .env("LC_ALL", locale)
@@ -752,7 +775,7 @@ fn capacity_shares_the_model_line_and_serial_shares_the_firmware_line() {
 fn protocol_version_is_inline_with_the_model_and_uses_the_interface_color() {
     for (protocol, version_field, version, english_label, german_label) in [
         ("ATA", "sata_version", " SATA 3.3 ", "Device Model", "Gerätemodell"),
-        ("NVMe", "nvme_version", " 1.3 ", "Model Number", "Modellnummer"),
+        ("NVMe", "nvme_version", " 1.3 ", "Device Model", "Gerätemodell"),
     ] {
         for (model, version) in [(Some("Test SSD"), Some(version)), (Some("Test SSD"), None), (None, Some(version))] {
             let mut data = ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}]));
