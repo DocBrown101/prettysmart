@@ -163,3 +163,128 @@ fn pcie_link_is_yellow_only_when_generation_or_lane_width_differs() {
         assert_eq!(text.input, format!("{} (max: {})", current, maximum));
     }
 }
+
+#[test]
+fn model_header_keeps_capacity_visible_and_wraps_long_models() {
+    for (protocol, model, capacity) in [
+        ("ATA", "Test SSD", Some(1000000000000_u64)),
+        ("NVMe", "Test SSD", Some(1000000000000_u64)),
+        (
+            "ATA",
+            "A very long device model name that must not collide with the capacity at the right edge",
+            Some(1000000000000_u64),
+        ),
+        ("ATA", "Test SSD", None),
+    ] {
+        let data =
+            json!({"device":{"protocol":protocol},"model_name":model,"user_capacity":{"bytes":capacity},"serial_number":"TEST","firmware_version":"FW1"});
+        let text = TableFormatter::new().render(&device(), &data, 90);
+        let model_row = text
+            .lines()
+            .find(|line| line.contains(L10N.device_model()))
+            .expect("model row");
+        if capacity.is_some() {
+            assert!(model_row.ends_with(&format!("{}: 1000.00 GB │", L10N.capacity())), "{text}");
+            assert_eq!(text.matches(L10N.capacity()).count(), 1);
+        } else {
+            assert!(!text.contains(L10N.capacity()), "{text}");
+        }
+        let header: Vec<_> = text
+            .lines()
+            .skip_while(|line| !line.contains("/dev/sda"))
+            .take_while(|line| line.starts_with('│'))
+            .collect();
+        assert_eq!(header.len(), if model.len() > 50 { 4 } else { 3 }, "{text}");
+        let header_text: String = header
+            .join("")
+            .replace(&format!("{}: 1000.00 GB", L10N.capacity()), "")
+            .chars()
+            .filter(|ch| !ch.is_whitespace() && *ch != '│')
+            .collect();
+        assert!(header_text.contains(&model.replace(' ', "")), "{text}");
+    }
+}
+
+#[test]
+fn protocol_version_is_inline_with_the_model() {
+    for (protocol, version_field, version, suffix) in [
+        ("ATA", "sata_version", " SATA 3.3 ", " (SATA 3.3)"),
+        ("NVMe", "nvme_version", " 1.3 ", " (NVMe 1.3)"),
+    ] {
+        for (model, version) in [(Some("Test SSD"), Some(version)), (Some("Test SSD"), None), (None, Some(version))] {
+            let mut data = json!({"device":{"protocol":protocol},"model_name":model});
+            data[version_field]["string"] = json!(version);
+            let header = device_header(&device(), &data, 86);
+            let label = format!("{}: {}", L10N.device_model(), model.unwrap_or_else(|| L10N.unavailable()));
+            assert!(header.contains(&label), "{header}");
+            if version.is_some() {
+                assert!(header.contains(&format!("{label}{suffix}")), "{header}");
+            } else {
+                let model_line = header
+                    .lines()
+                    .find(|line| line.contains(&label))
+                    .expect("model line");
+                assert!(!model_line.contains('('), "{header}");
+            }
+        }
+    }
+}
+
+#[test]
+fn header_detects_nvme_from_access_type() {
+    for (access_type, path, is_nvme) in [
+        ("sntasmedia", "/dev/sda", true),
+        ("sntjmicron", "/dev/sdb", true),
+        ("sntrealtek", "/dev/sdc", true),
+        ("nvme", "/dev/nvme0n1", true),
+        ("sat", "/dev/sdd", false),
+    ] {
+        let mut device = device();
+        device.interface = access_type.to_string();
+        device.device_path = path.to_string();
+        let data = json!({"model_name":"Test SSD","nvme_version":{"string":"1.3"}});
+        let header = device_header(&device, &data, 86);
+        assert_eq!(header.contains("Test SSD (NVMe 1.3)"), is_nvme, "{header}");
+        assert!(header.contains(&format!("{path} ({access_type})")), "{header}");
+        if access_type != "nvme" {
+            assert!(!header.contains(L10N.transmission_mode()), "{header}");
+        }
+    }
+}
+
+#[test]
+fn overall_status_is_the_final_right_aligned_table_row_without_hiding_alerts() {
+    for passed in [json!(true), json!(false), json!(null)] {
+        let mut formatter = TableFormatter::new();
+        formatter.add_row("Critical metric", "1", "-", Some("KRITISCH"));
+        formatter.add_manufacturer_row("Vendor_Field", "7");
+        let text = formatter.render(&device(), &json!({"smart_status":{"passed":passed}}), 90);
+        let lines: Vec<_> = text.lines().collect();
+        let footer = lines[lines.len() - 2];
+        let expected = match passed.as_bool() {
+            Some(true) => L10N.status_ok(),
+            Some(false) => L10N.status_critical(),
+            None => L10N.unavailable(),
+        };
+        assert!(footer.ends_with(&format!("{}: {} │", L10N.smart_status(), expected)), "{text}");
+        assert_eq!(footer.matches('│').count(), 2);
+        assert!(lines[lines.len() - 3].starts_with('├'));
+        assert_eq!(
+            text.matches(L10N.smart_status())
+                .count(),
+            1
+        );
+        assert!(
+            text.lines()
+                .any(|line| line.contains("Critical metric") && line.contains(L10N.status_critical())),
+            "{text}"
+        );
+        assert!(
+            text.find("Vendor_Field")
+                .expect("vendor value")
+                < text
+                    .find(L10N.smart_status())
+                    .expect("overall status")
+        );
+    }
+}

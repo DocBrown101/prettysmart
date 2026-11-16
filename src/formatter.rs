@@ -86,7 +86,7 @@ impl TableFormatter {
         println!("{}", self.render(device, json, *OUTPUT_WIDTH));
     }
 
-    fn render(mut self, device: &StorageDevice, json: &Value, width: usize) -> String {
+    pub fn render(mut self, device: &StorageDevice, json: &Value, width: usize) -> String {
         let manufacturer_start = self.builder.count_records();
         let has_manufacturer_rows = !self.manufacturer_rows.is_empty();
         for row in self.manufacturer_rows {

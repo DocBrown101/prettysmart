@@ -7,6 +7,10 @@ mod ata_smart;
 mod metric_context;
 mod nvme_smart;
 
+#[cfg(test)]
+#[path = "tests/smart_data.rs"]
+mod tests;
+
 use metric_context::MetricContext;
 use prettysmart::formatter::{TableFormatter, print_header};
 use prettysmart::localization::L10N;
