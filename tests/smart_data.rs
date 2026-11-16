@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+mod common;
+
+use common::assert_success;
 use serde_json::{Value, json};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -188,7 +191,7 @@ fn corrupt_snapshot_history_is_reported_and_never_overwritten() {
 
     let output = device.run();
 
-    assert!(output.status.success());
+    assert_success(&output);
     assert_eq!(current_value(&stdout(&output), "Power cycles"), "7");
     assert!(String::from_utf8_lossy(&output.stderr).contains("Snapshot history could not be loaded"));
     assert_eq!(
@@ -214,7 +217,7 @@ fn health_failure_bits_preserve_measurements_and_show_failed_attributes() {
     for status in [8, 16, 32, 64, 128] {
         device.health(data.clone(), status);
         let output = device.run();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert_success(&output);
         let text = stdout(&output);
         assert!(row(&text, "SMART overall status").contains("CRITICAL"));
         assert!(row(&text, "Raw_Read_Error_Rate:").contains("CRITICAL"));
@@ -240,7 +243,7 @@ fn ata_zero_values_do_not_show_past_failures() {
         {"id":202,"name":"Program_Fail_Cnt_Total","raw":{"string":"0"}}
     ])));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     for label in ["Raw_Read_Error_Rate", "Spin Retry Count", "Program_Fail_Cnt_Total"] {
         assert!(!text.contains(label), "{text}");
@@ -266,7 +269,7 @@ fn ata_past_failures_warn_but_healthy_endurance_stays_neutral() {
             .env("LC_ALL", locale)
             .output()
             .expect("run localized CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert_eq!(current_value(&text, endurance), "99 %");
         assert_eq!(status(&text, endurance), "—");
@@ -284,7 +287,7 @@ fn ata_property_labels_omit_attribute_ids_and_digits() {
         {"id":241,"name":"Host_Writes_32MiB","raw":{"value":1}}
     ])));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     assert_eq!(current_value(&text, "Vendor_Attribute_"), "7");
     assert_eq!(status(&text, "Vendor_Attribute_"), "—");
@@ -339,7 +342,7 @@ fn sata_names_units_and_decreasing_counts_are_respected() {
     ])));
     device.seed(json!({"sata.power_on_hours":720000,"sata.pending_sectors":8,"sata.offline_uncorrectable_sectors":2}));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     assert_eq!(current_value(&text, "Operating hours"), "200 h (8 days)");
     assert_eq!(change(&text, "Operating hours"), "-");
@@ -366,7 +369,7 @@ fn nand_writes_use_decimal_gb_and_stay_neutral() {
     ]));
     let device = Device::new(data.clone());
     let zero = device.run();
-    assert!(zero.status.success());
+    assert_success(&zero);
     assert!(!stdout(&zero).contains("NAND"));
     data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(6805);
     data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15295);
@@ -377,7 +380,7 @@ fn nand_writes_use_decimal_gb_and_stay_neutral() {
             .env("LC_ALL", locale)
             .output()
             .expect("run localized CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
             let label = format!("{title} ({kind})");
@@ -399,7 +402,7 @@ fn nand_writes_use_decimal_gb_and_stay_neutral() {
     data["ata_smart_attributes"]["table"][1]["raw"]["value"] = json!(15297);
     device.health(data, 0);
     let changed = device.run();
-    assert!(changed.status.success());
+    assert_success(&changed);
     let text = stdout(&changed);
     assert_eq!(change(&text, "NAND written (TLC)"), "+1.00 GB");
     assert_eq!(change(&text, "NAND written (SLC)"), "+2.00 GB");
@@ -420,7 +423,7 @@ fn neutral_nand_values_are_green_but_vendor_raw_values_are_not() {
             .env("CLICOLOR_FORCE", "1")
             .output()
             .expect("run colored CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         for (kind, value) in [("TLC", "6.80 TB"), ("SLC", "15.29 TB")] {
             let label = format!("{title} ({kind})");
@@ -447,7 +450,7 @@ fn nand_gb_writes_are_recognized_by_name_regardless_of_model_or_id() {
         data["model_name"] = json!(model);
         let device = Device::new(data);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert_eq!(current_value(&text, "NAND written (TLC)"), "6.80 TB");
         assert_eq!(current_value(&text, "NAND written (SLC)"), "15.29 TB");
@@ -461,7 +464,7 @@ fn nand_threshold_failures_remain_visible_and_critical_even_at_zero() {
     data["model_name"] = json!("WDC  WDS500G2B0A-00SM50");
     let device = Device::new(data);
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     assert!(row(&stdout(&output), "NAND written (TLC)").contains("CRITICAL"));
 }
 
@@ -502,7 +505,7 @@ fn recognized_remaining_endurance_uses_profile_specific_values() {
         data["model_family"] = json!(family);
         let device = Device::new(data);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         let endurance = row(&text, "Estimated remaining write endurance");
         assert!(endurance.contains(&format!("{expected} %")), "{endurance}");
@@ -517,7 +520,7 @@ fn recognized_remaining_endurance_uses_profile_specific_values() {
         );
         assert_eq!(snapshots["devices"]["TEST"][0]["metrics"][key], expected);
         let unchanged = device.run();
-        assert!(unchanged.status.success());
+        assert_success(&unchanged);
         let unchanged = stdout(&unchanged);
         assert_eq!(
             status(&unchanged, "Estimated remaining write endurance"),
@@ -530,7 +533,7 @@ fn recognized_remaining_endurance_uses_profile_specific_values() {
         {"id":233,"name":"Media_Wearout_Indicator","value":100,"raw":{"value":7}}
     ])));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     for (name, raw) in [("Grown_Failing_Block_Ct", "3"), ("SSD_Life_Left", "96"), ("Media_Wearout_Indicator", "7")] {
         assert!(!row(&text, name).contains('%'));
@@ -545,7 +548,7 @@ fn intel_remaining_endurance_validates_raw_percentage_without_normalized_fallbac
         data["model_name"] = json!("INTEL SSDSC2KB480G8");
         let device = Device::new(data);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         if let Some(percent) = expected {
             assert!(row(&text, "Estimated remaining write endurance").contains(&format!("{percent} %")), "{text}");
@@ -567,7 +570,7 @@ fn intel_error_counter_aliases_warn_and_keep_tracking_changes() {
     ])));
     device.seed(json!({"sata.pending_sectors":1,"sata.udma_crc_errors":1}));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     let pending = row(&text, "Pending sectors");
     assert!(pending.contains("CRITICAL") && pending.contains("+1"), "{pending}");
@@ -601,7 +604,7 @@ fn ata_counter_warnings_require_a_changed_positive_count() {
                 device.seed(json!({key:previous}));
             }
             let output = device.run();
-            assert!(output.status.success());
+            assert_success(&output);
             let text = stdout(&output);
             assert_eq!(text.contains("WARNING"), warning, "{name}: {previous:?} -> {current}: {text}");
             if current == 0 {
@@ -610,7 +613,7 @@ fn ata_counter_warnings_require_a_changed_positive_count() {
                 assert_eq!(current_value(&text, label), current.to_string());
             }
             let unchanged = device.run();
-            assert!(unchanged.status.success());
+            assert_success(&unchanged);
             assert!(!stdout(&unchanged).contains("WARNING"));
         }
     }
@@ -639,7 +642,7 @@ fn hidden_ata_zero_values_stay_in_history_and_positive_values_stay_visible() {
         }
         device.health(data.clone(), 0);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert!(!text.contains("Operating hours"));
         for label in [
@@ -685,7 +688,7 @@ fn unchanged_udma_crc_threshold_failures_remain_critical() {
     ])));
     device.seed(json!({"sata.udma_crc_errors":3}));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     assert!(row(&stdout(&output), "UDMA CRC-err").contains("CRITICAL"));
 }
 
@@ -704,7 +707,7 @@ fn nvme_zero_values_are_hidden_except_for_threshold_failures_and_counters_warn_o
         data["nvme_smart_health_information_log"]["num_err_log_entries"] = json!(current);
         device.health(data.clone(), 0);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert!(row(&text, "Spare blocks").contains("CRITICAL"));
         assert!(row(&text, "Estimated remaining write endurance").contains("CRITICAL"));
@@ -731,7 +734,7 @@ fn nvme_wear_above_100_keeps_original_usage_and_zero_remaining() {
         "nvme_smart_health_information_log":{"percentage_used":150}
     }));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     assert_eq!(current_value(&text, "Estimated endurance used"), "150 %");
     assert_eq!(current_value(&text, "Estimated remaining write endurance"), "0 % remaining");
@@ -766,7 +769,7 @@ fn model_header_keeps_capacity_visible_and_wraps_long_models() {
                 .env("LC_ALL", locale)
                 .output()
                 .expect("run localized CLI");
-            assert!(output.status.success());
+            assert_success(&output);
             let text = stdout(&output);
             let model_row = row(&text, &format!("{model_label}:"));
             if capacity.is_some() {
@@ -810,7 +813,7 @@ fn protocol_version_is_inline_with_the_model() {
             }
             let device = Device::new(data);
             let output = device.run();
-            assert!(output.status.success());
+            assert_success(&output);
             let text = stdout(&output);
             let model_label = format!("Device Model: {}", model.unwrap_or("Unavailable"));
             let model_row = row(&text, &model_label);
@@ -840,7 +843,7 @@ fn protocol_version_uses_the_interface_color_in_both_languages() {
                 .env("CLICOLOR_FORCE", "1")
                 .output()
                 .expect("run colored CLI");
-            assert!(output.status.success());
+            assert_success(&output);
             let text = stdout(&output);
             assert!(row(&text, model_label).contains(&format!("Test SSD (\x1b[36m{version}\x1b[0m)")), "{text}");
             assert!(row(&text, "/dev/sda").contains("(\x1b[36msat\x1b[0m)"), "{text}");
@@ -864,7 +867,7 @@ fn locale_precedence_uses_first_nonempty_variable() {
             .env("LANG", lang)
             .output()
             .expect("run localized CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         assert!(stdout(&output).contains(expected));
     }
 }
@@ -880,11 +883,11 @@ fn verified_lba_units_and_zero_baselines_produce_correct_deltas() {
         data["model_family"] = json!(family);
         data["logical_block_size"] = json!(4096);
         let device = Device::new(data.clone());
-        assert!(device.run().status.success());
+        assert_success(&device.run());
         data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(1953125000_u64);
         device.health(data, 0);
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert_eq!(current_value(&text, "Total_LBAs_Written"), "1.00 TB");
         assert_eq!(change(&text, "Total_LBAs_Written"), "+1.00 TB");
@@ -899,7 +902,7 @@ fn undecoded_hours_are_not_guessed() {
         .remove("power_on_time");
     let device = Device::new(data);
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     assert!(!text.contains("Operating hours"));
     assert!(row(&text, "Power_On_Hours_and_Msec").contains("5h+00m+01s"));
@@ -939,7 +942,7 @@ fn vendor_section_follows_known_neutral_metrics_and_never_contains_alerts() {
             .env("LC_ALL", locale)
             .output()
             .expect("run localized CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         let (known, raw) = text
             .split_once(section)
@@ -980,7 +983,7 @@ fn zero_baselines_show_changes_without_turning_normal_metrics_into_warnings() {
             data["nvme_smart_health_information_log"] =
                 json!({"power_cycles":0,"data_units_written":0,"num_err_log_entries":0,"media_errors":0,"unsafe_shutdowns":0});
             let device = Device::new(data.clone());
-            assert!(device.run().status.success());
+            assert_success(&device.run());
             for attr in data["ata_smart_attributes"]["table"]
                 .as_array_mut()
                 .expect("attributes")
@@ -1001,7 +1004,7 @@ fn zero_baselines_show_changes_without_turning_normal_metrics_into_warnings() {
                     .env("LC_ALL", locale)
                     .output()
                     .expect("run CLI");
-                assert!(output.status.success());
+                assert_success(&output);
                 stdout(&output)
             };
             let text = run();
@@ -1046,7 +1049,7 @@ fn terminal_width_handles_invalid_and_out_of_range_columns() {
             .env("COLUMNS", columns)
             .output()
             .expect("run CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         for line in text
             .lines()
@@ -1061,7 +1064,7 @@ fn terminal_width_handles_invalid_and_out_of_range_columns() {
 fn banner_shows_the_title_and_right_aligned_version() {
     let device = Device::new(ata(json!([{"id":12,"name":"Power_Cycle_Count","raw":{"value":1}}])));
     let output = device.run();
-    assert!(output.status.success());
+    assert_success(&output);
     let text = stdout(&output);
     let banner = row(&text, "Storage Media Diagnostics");
     assert!(banner.starts_with("│ Storage Media Diagnostics"), "{banner}");
@@ -1094,7 +1097,7 @@ fn multiple_protocols_share_borders_and_columns_with_color() {
                     .env("CLICOLOR_FORCE", if color { "1" } else { "0" })
                     .output()
                     .expect("run CLI");
-                assert!(output.status.success());
+                assert_success(&output);
                 let text = stdout(&output);
                 assert_eq!(text.contains("\x1b["), color, "{text}");
                 let lines: Vec<_> = text.lines().collect();
@@ -1149,7 +1152,7 @@ fn nvme_warning_bits_only_show_the_corresponding_warning() {
             "nvme_smart_health_information_log":{"critical_warning":bits}
         }));
         let output = device.run();
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         let properties = compact(&column_text(&text, 1));
         for (bit, warning) in warnings {
@@ -1183,7 +1186,7 @@ fn every_nvme_warning_bit_stays_explicit_even_when_the_overall_status_passes() {
             .env("LC_ALL", locale)
             .output()
             .expect("run localized CLI");
-        assert!(output.status.success());
+        assert_success(&output);
         let text = stdout(&output);
         assert!(row(&text, loc.smart_status()).contains(loc.status_ok()), "{text}");
         assert_eq!(current_value(&text, loc.critical_warning_label()), "127");
@@ -1218,7 +1221,7 @@ fn prepared_percentages_and_changes_use_spaces_but_vendor_raw_values_stay_untouc
             data["device"]["protocol"] = json!(protocol);
             data["nvme_smart_health_information_log"] = json!({"available_spare":100,"available_spare_threshold":10,"percentage_used":7});
             let device = Device::new(data.clone());
-            assert!(device.run().status.success());
+            assert_success(&device.run());
             data["ata_smart_attributes"]["table"][0]["raw"]["value"] = json!(49);
             data["nvme_smart_health_information_log"]["available_spare"] = json!(99);
             data["nvme_smart_health_information_log"]["percentage_used"] = json!(8);
@@ -1228,7 +1231,7 @@ fn prepared_percentages_and_changes_use_spaces_but_vendor_raw_values_stay_untouc
                 .env("LC_ALL", locale)
                 .output()
                 .expect("run localized CLI");
-            assert!(output.status.success());
+            assert_success(&output);
             let text = stdout(&output);
             assert_eq!(
                 current_value(&text, loc.drive_health()),

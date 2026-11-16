@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+mod common;
+
+use common::assert_success;
 use serde_json::{Value, json};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -70,10 +73,10 @@ fn smart_data_and_header_detect_nvme_from_access_type() {
             .env("CLICOLOR_FORCE", "0")
             .output()
             .expect("run prettysmart with mocked smartctl");
+        assert_success(&output);
         let snapshots = fs::read(directory.join("prettysmart/snapshots.json")).expect("read saved snapshots");
         fs::remove_dir_all(&directory).expect("remove test directory");
 
-        assert!(output.status.success(), "{access_type}: {}", String::from_utf8_lossy(&output.stderr));
         let stdout = String::from_utf8(output.stdout).expect("prettysmart output is valid UTF-8");
         assert!(stdout.contains(&format!("{device_path} ({access_type})")), "{stdout}");
         let snapshots: Value = serde_json::from_slice(&snapshots).expect("saved snapshots contain valid JSON");
